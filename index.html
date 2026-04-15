@@ -8,7 +8,41 @@
 </head>
 <body>
 
-<div class="shell">
+<!-- ══════════════════════════════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+
+    <div class="login-brand">
+      <div class="login-logo">🏨</div>
+      <div class="login-brand-name">Hotel<span>PMS</span></div>
+      <div class="login-brand-sub">Square &amp; Pool Properties</div>
+    </div>
+
+    <div class="login-form">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input class="form-input" id="loginUsername" type="text"
+               placeholder="Enter username" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="loginPassword" type="password"
+               placeholder="Enter password" autocomplete="current-password">
+      </div>
+      <p id="loginError" class="login-error" style="display:none"></p>
+      <button class="btn btn-primary login-submit" onclick="tryLogin()">Sign in</button>
+    </div>
+
+    <div class="login-footer">Hotel Property Management System</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MAIN APP SHELL  (hidden until logged in)
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="appShell" class="shell" style="display:none">
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
   <aside class="sidebar">
@@ -24,22 +58,32 @@
 
     <nav class="sidebar-nav">
       <div class="nav-label">Views</div>
-      <button class="nav-btn active" onclick="showPage('dashboard',this)">
+
+      <button class="nav-btn active" id="nav-dashboard" onclick="guardedShowPage('dashboard',this)">
         <span class="nav-icon">📋</span><span>Dashboard</span>
       </button>
-      <button class="nav-btn" onclick="showPage('rooms',this)">
+      <button class="nav-btn" id="nav-rooms" onclick="guardedShowPage('rooms',this)">
         <span class="nav-icon">🚪</span><span>Rooms</span>
       </button>
-      <button class="nav-btn" onclick="showPage('bookings',this)">
+      <button class="nav-btn" id="nav-bookings" onclick="guardedShowPage('bookings',this)">
         <span class="nav-icon">📅</span><span>Bookings</span>
       </button>
-      <button class="nav-btn" onclick="showPage('prices',this)">
+      <button class="nav-btn" id="nav-prices" onclick="guardedShowPage('prices',this)">
         <span class="nav-icon">💰</span><span>Prices</span>
       </button>
-      <button class="nav-btn" onclick="showPage('analytics',this)">
+      <button class="nav-btn" id="nav-analytics" onclick="guardedShowPage('analytics',this)">
         <span class="nav-icon">📊</span><span>Analytics</span>
       </button>
     </nav>
+
+    <!-- Session user widget -->
+    <div class="session-widget">
+      <div class="session-info">
+        <span class="session-user" id="sessionUser">—</span>
+        <span class="session-role" id="sessionRole">—</span>
+      </div>
+      <button class="logout-btn" onclick="logout()" title="Sign out">⏻</button>
+    </div>
 
     <div class="sidebar-footer">
       <div class="footer-date" id="sidebarDate"></div>
@@ -59,9 +103,11 @@
           <button class="dnav-btn" onclick="changeDay(1)">&#8250;</button>
         </div>
         <button class="today-btn" onclick="goToday()">Today</button>
-        <button class="ie-btn"    onclick="openImportExport()">&#8645; Excel</button>
-        <button class="add-btn"   onclick="openAddBooking()">+ Booking</button>
-        <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
+        <!-- Admin only -->
+        <button class="ie-btn" onclick="requireAdmin(openImportExport)">&#8645; Excel</button>
+        <button class="add-btn" onclick="openAddBooking()">+ Booking</button>
+        <input type="file" id="importFileInput" accept=".xlsx,.xls"
+               style="display:none" onchange="handleImportFile(this)">
       </div>
     </div>
 
@@ -71,13 +117,11 @@
       <!-- Dashboard -->
       <div class="page active" id="page-dashboard">
         <div class="stats-row" id="statsRow"></div>
-
         <div class="filters-row">
           <div class="search-wrap">
             <span class="search-icon">🔍</span>
             <input class="search-input" id="searchInput" type="text"
-                   placeholder="Search guest or room…"
-                   oninput="setSearch(this.value)">
+                   placeholder="Search guest or room…" oninput="setSearch(this.value)">
           </div>
           <button class="filter-pill active" onclick="setFilter('all',this)">All</button>
           <button class="filter-pill" onclick="setFilter('occupied',this)">Occupied</button>
@@ -85,7 +129,6 @@
           <button class="filter-pill" onclick="setFilter('maintenance',this)">Maintenance</button>
           <button class="filter-pill" onclick="setFilter('no-deposit',this)">🔑 No deposit</button>
         </div>
-
         <div class="legend-row">
           <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div>Occupied</div>
           <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Vacant</div>
@@ -97,11 +140,10 @@
           <div class="legend-item"><span class="legend-badge src-AG">Ag</span>Agoda</div>
           <div class="legend-item"><span class="legend-badge src-EX">Ex</span>Expedia</div>
         </div>
-
         <div id="roomsArea"></div>
       </div>
 
-      <!-- Rooms Management -->
+      <!-- Rooms (admin only) -->
       <div class="page" id="page-rooms">
         <div class="section-title">
           Room Management
@@ -111,7 +153,7 @@
         <div class="rooms-mgmt" id="roomsMgmt"></div>
       </div>
 
-      <!-- Bookings List -->
+      <!-- Bookings -->
       <div class="page" id="page-bookings">
         <div class="section-title">
           All Bookings
@@ -120,7 +162,7 @@
         <div id="bookingsList"></div>
       </div>
 
-      <!-- Prices -->
+      <!-- Prices (admin only) -->
       <div class="page" id="page-prices">
         <div class="section-title">Room Rates (₱ per night)</div>
         <p style="font-size:12px;color:var(--text3);margin-bottom:14px">
@@ -129,10 +171,10 @@
         <div id="pricesArea"></div>
       </div>
 
-      <!-- Analytics -->
+      <!-- Analytics (admin only) -->
       <div class="page" id="page-analytics">
         <div class="analytics-controls">
-          <div class="analytics-tabs" id="analyticsTabs">
+          <div class="analytics-tabs">
             <button class="atab active" onclick="setAnalyticsView('day',this)">Day</button>
             <button class="atab" onclick="setAnalyticsView('week',this)">Week</button>
             <button class="atab" onclick="setAnalyticsView('month',this)">Month</button>
@@ -140,18 +182,16 @@
           </div>
           <div class="analytics-nav">
             <button class="cal-nav-btn" onclick="analyticsShift(-1)">&#8592;</button>
-            <span id="analyticsRangeLabel" style="font-size:13px;font-weight:600;min-width:180px;text-align:center"></span>
+            <span id="analyticsRangeLabel"
+                  style="font-size:13px;font-weight:600;min-width:180px;text-align:center"></span>
             <button class="cal-nav-btn" onclick="analyticsShift(1)">&#8594;</button>
           </div>
         </div>
-
         <div class="analytics-summary" id="analyticsSummary"></div>
-
         <div class="chart-card">
           <div class="chart-title" id="chartTitle">Income</div>
           <div class="chart-wrap" id="chartWrap"></div>
         </div>
-
         <div class="chart-card" style="margin-top:12px">
           <div class="chart-title">Income by source</div>
           <div id="sourceBreakdown"></div>
@@ -160,7 +200,7 @@
 
     </div><!-- /.main -->
   </div><!-- /.content -->
-</div><!-- /.shell -->
+</div><!-- /.shell / #appShell -->
 
 
 <!-- ── Room Modal ───────────────────────────────────────────────────────────── -->
@@ -219,12 +259,9 @@
   </div>
 </div>
 
-<!-- Toast notification -->
-<div class="toast" id="toast"></div>
-
-
 <!-- ── Import / Export Modal ─────────────────────────────────────────────────── -->
-<div class="overlay" id="importExportModal" style="display:none" onclick="if(event.target===this)closeModal('importExportModal')">
+<div class="overlay" id="importExportModal" style="display:none"
+     onclick="if(event.target===this)closeModal('importExportModal')">
   <div class="modal" style="max-width:480px">
     <div class="modal-head">
       <div>
@@ -234,30 +271,27 @@
       <button class="modal-close" onclick="closeModal('importExportModal')">&#x2715;</button>
     </div>
     <div class="modal-body">
-
       <div class="ie-section">
         <div class="ie-section-title">&#8595; Export to Excel</div>
-        <p class="ie-desc">Downloads a .xlsx file with one sheet per hotel per month, matching the original booking format. Includes income summary and room rates.</p>
+        <p class="ie-desc">Downloads a .xlsx with one sheet per hotel per month, matching the original booking format. Includes income summary and room rates.</p>
         <button class="btn btn-primary ie-action-btn" onclick="exportToExcel()">Download .xlsx</button>
       </div>
-
       <div class="ie-divider"></div>
-
       <div class="ie-section">
         <div class="ie-section-title">&#8593; Import from Excel</div>
-        <p class="ie-desc">Upload a .xlsx file in the same format. New bookings are added; duplicates are skipped. Existing bookings are never deleted.</p>
+        <p class="ie-desc">Upload a .xlsx in the same format. New bookings are added; duplicates are skipped. Existing bookings are never deleted.</p>
         <button class="btn btn-ghost ie-action-btn" onclick="triggerImportFile()">Choose .xlsx file…</button>
       </div>
-
       <div class="ie-divider"></div>
-
       <div class="ie-section ie-format-hint">
         <div class="ie-section-title">Expected cell format</div>
-        <p class="ie-desc">Each occupied cell should follow: <code>SOURCE - ROOM GUEST NAME</code><br>
-        e.g. <code>T - 101 YAMAGUCHI HIROAKI</code> &nbsp;|&nbsp; <code>Ag - 205 SIMON APPELGREN +1H</code></p>
-        <p class="ie-desc" style="margin-top:6px">Source codes: <strong>T</strong> = Trip.com &nbsp;<strong>W</strong> = Walk-in &nbsp;<strong>B</strong> = Booking.com &nbsp;<strong>Ag</strong> = Agoda &nbsp;<strong>Ex</strong> = Expedia</p>
+        <p class="ie-desc">Each cell: <code>SOURCE - ROOM GUEST NAME</code><br>
+          e.g. <code>T - 101 YAMAGUCHI HIROAKI</code> &nbsp;|&nbsp; <code>Ag - 205 APPELGREN +1H</code></p>
+        <p class="ie-desc" style="margin-top:6px">
+          <strong>T</strong> Trip.com &nbsp;<strong>W</strong> Walk-in &nbsp;
+          <strong>B</strong> Booking.com &nbsp;<strong>Ag</strong> Agoda &nbsp;<strong>Ex</strong> Expedia
+        </p>
       </div>
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('importExportModal')">Close</button>
@@ -265,7 +299,49 @@
   </div>
 </div>
 
+<!-- ── Change Password Modal (admin only) ───────────────────────────────────── -->
+<div class="overlay" id="changePwModal" style="display:none"
+     onclick="if(event.target===this)closeModal('changePwModal')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-head">
+      <div class="modal-title">Change Password</div>
+      <button class="modal-close" onclick="closeModal('changePwModal')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Account</label>
+        <select class="form-select" id="cpAccount">
+          <option value="admin">admin (Administrator)</option>
+          <option value="staff">staff (Front Desk)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">New password</label>
+        <input class="form-input" id="cpNewPw" type="password" placeholder="New password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm password</label>
+        <input class="form-input" id="cpConfirm" type="password" placeholder="Repeat password">
+      </div>
+      <p id="cpError" style="font-size:12px;color:var(--red);margin-top:8px;display:none"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('changePwModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewPassword()">Save password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="auth.js"></script>
 <script src="import-export.js"></script>
 <script src="app.js"></script>
+
+<script>
+  // Boot sequence — runs after all scripts load
+  bootAuth();
+</script>
 </body>
 </html>

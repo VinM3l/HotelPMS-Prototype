@@ -883,5 +883,27 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal'].forEach(closeModal);
 });
 
+// ─── CHANGE PASSWORD (admin only) ────────────────────────────────────────────
+function openChangePw() {
+  requireAdmin(() => {
+    document.getElementById('cpNewPw').value = '';
+    document.getElementById('cpConfirm').value = '';
+    document.getElementById('cpError').style.display = 'none';
+    document.getElementById('changePwModal').style.display = 'flex';
+  });
+}
+
+function saveNewPassword() {
+  const account = document.getElementById('cpAccount').value;
+  const newPw   = document.getElementById('cpNewPw').value;
+  const confirm = document.getElementById('cpConfirm').value;
+  const errEl   = document.getElementById('cpError');
+  if (newPw.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; errEl.style.display = 'block'; return; }
+  if (newPw !== confirm) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+  ACCOUNTS[account].password = newPw;
+  closeModal('changePwModal');
+  toast('Password updated for ' + account);
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-renderAll();
+// renderAll() is called by bootAuth() after login — not called here directly.
