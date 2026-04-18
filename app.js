@@ -96,10 +96,33 @@ const DEFAULT_DB = {
 let DB = loadState() || JSON.parse(JSON.stringify(DEFAULT_DB));
 if (!DB.keyDeposits) DB.keyDeposits = {};
 if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500 };
-// migrate old bookings missing extraHead/extraBed
+// Force re-migration if data version is old
+const DATA_VERSION = 2;
+try {
+  const savedVersion = parseInt(localStorage.getItem('hotel_pms_version') || '0');
+  if (savedVersion < DATA_VERSION) {
+    // Run migration on all stored bookings
+    if (DB.bookings) {
+      DB.bookings.forEach(b => {
+        if (b.discountType  === undefined) b.discountType  = 'none';
+        if (b.discountValue === undefined) b.discountValue = 0;
+        if (b.discountNote  === undefined) b.discountNote  = '';
+        if (b.extraHead     === undefined) b.extraHead     = 0;
+        if (b.extraBed      === undefined) b.extraBed      = 0;
+      });
+      saveState();
+    }
+    localStorage.setItem('hotel_pms_version', DATA_VERSION);
+  }
+} catch(e) {}
+
+// migrate old bookings missing fields
 DB.bookings.forEach(b => {
-  if (b.extraHead === undefined) b.extraHead = 0;
-  if (b.extraBed  === undefined) b.extraBed  = 0;
+  if (b.extraHead     === undefined) b.extraHead     = 0;
+  if (b.extraBed      === undefined) b.extraBed      = 0;
+  if (b.discountType  === undefined) b.discountType  = 'none';
+  if (b.discountValue === undefined) b.discountValue = 0;
+  if (b.discountNote  === undefined) b.discountNote  = '';
 });
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -170,7 +193,34 @@ function bookingIncomeInRange(b, from, to) {
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0) * (DB.addons.extraHead||0)
                   + (b.extraBed||0)  * (DB.addons.extraBed||0);
-  return (baseRate + addonRate) * nights;
+  const gross = (baseRate + addonRate) * nights;
+  return applyDiscount(gross, b);
+}
+
+/** Apply a booking's discount to a gross amount and return net. */
+function applyDiscount(gross, b) {
+  if (!b || b.discountType === 'none' || !b.discountValue) return gross;
+  if (b.discountType === 'percent') {
+    const pct = Math.min(100, Math.max(0, parseFloat(b.discountValue)||0));
+    return gross * (1 - pct / 100);
+  }
+  if (b.discountType === 'fixed') {
+    return Math.max(0, gross - (parseFloat(b.discountValue)||0));
+  }
+  return gross;
+}
+
+/** Returns the discount amount in pesos for a full booking. */
+function bookingDiscountAmount(b) {
+  const roomDef = DB.hotels[b.hotel]?.rooms[b.room];
+  if (!roomDef) return 0;
+  const ci = parseDate(b.checkin), co = parseDate(b.checkout);
+  const nights = Math.round((co - ci) / 864e5) + 1;
+  const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
+  const addonRate = (b.extraHead||0) * (DB.addons.extraHead||0)
+                  + (b.extraBed||0)  * (DB.addons.extraBed||0);
+  const gross = (baseRate + addonRate) * nights;
+  return gross - applyDiscount(gross, b);
 }
 
 /**
@@ -405,11 +455,21 @@ function renderRoomCalendar() {
     const extras=[];
     if(b.extraHead>0) extras.push(`+${b.extraHead} extra head`);
     if(b.extraBed>0)  extras.push(`+${b.extraBed} extra bed`);
+    const hasDiscH=b.discountType&&b.discountType!=='none'&&b.discountValue>0;
+    const discAmtH=hasDiscH?bookingDiscountAmount(b):0;
+    const discLabelH=hasDiscH?(b.discountType==='percent'?`${b.discountValue}% off`:peso(b.discountValue)+' off'):'';
     cal+=`<div class="booking-item">
       <span class="src-badge src-${b.source}" style="flex-shrink:0">${srcLabel(b.source)}</span>
       <div style="flex:1;min-width:0">
-        <div class="booking-guest-name">${b.guest}</div>
-        <div class="booking-dates">${shortDate(b.checkin)} – ${shortDate(b.checkout)}${extras.length?' · '+extras.join(', '):''}</div>
+        <div class="booking-guest-name" style="display:flex;align-items:center;gap:6px">
+          ${b.guest}
+          ${hasDiscH?`<span class="disc-badge" title="${b.discountNote||'Deal applied'}">${discLabelH}</span>`:''}
+        </div>
+        <div class="booking-dates">
+          ${shortDate(b.checkin)} – ${shortDate(b.checkout)}${extras.length?' · '+extras.join(', '):''}
+          ${hasDiscH?`<span style="color:var(--red-text)"> · −${peso(discAmtH)}</span>`:''}
+        </div>
+        ${b.discountNote?`<div style="font-size:10px;color:var(--text3);font-style:italic">"${b.discountNote}"</div>`:''}
       </div>
       <button class="key-deposit-toggle ${paid?'deposit-paid':'deposit-missing'}"
               onclick="event.stopPropagation();toggleDepositUI('${b.id}',${!paid})">
@@ -479,26 +539,50 @@ function editBooking(id) {
   document.getElementById('bookingModal').style.display='flex';
 }
 
-function buildBookingForm(b,preRoom) {
-  const h=b?b.hotel:currentHotel;
-  const roomOpts=sortRoomKeys(Object.keys(DB.hotels[h].rooms))
-    .map(r=>`<option value="${r}" ${(b&&b.room===r)||(preRoom&&preRoom===r)?'selected':''}>${r} – ${DB.hotels[h].rooms[r].label}</option>`)
-    .join('');
-  const srcOpts=['T','W','B','AG','EX'].map(s=>`<option value="${s}" ${b&&b.source===s?'selected':''}>${srcLabel(s)}</option>`).join('');
-  const today=fmtDate(new Date());
-  const depositPaid=b?hasKeyDeposit(b.id):false;
-  const addons=DB.addons;
+function buildBookingForm(b, preRoom) {
+  const h = b ? b.hotel : currentHotel;
 
-  document.getElementById('bookingForm').innerHTML=`
+  // Safe field reads with fallbacks for old bookings
+  const guestVal       = b ? b.guest        : '';
+  const checkinVal     = b ? b.checkin       : fmtDate(new Date());
+  const checkoutVal    = b ? b.checkout      : fmtDate(new Date());
+  const extraHeadVal   = b ? (b.extraHead  || 0) : 0;
+  const extraBedVal    = b ? (b.extraBed   || 0) : 0;
+  const discType       = b ? (b.discountType  || 'none') : 'none';
+  const discValue      = b ? (b.discountValue || 0)      : 0;
+  const discNote       = b ? (b.discountNote  || '')     : '';
+  const notesVal       = b ? (b.notes || '')  : '';
+  const depositPaid    = b ? hasKeyDeposit(b.id) : false;
+  const addons         = DB.addons;
+
+  const roomOpts = sortRoomKeys(Object.keys(DB.hotels[h].rooms))
+    .map(r => {
+      const sel = (b && b.room === r) || (preRoom && preRoom === r) ? 'selected' : '';
+      return `<option value="${r}" ${sel}>${r} – ${DB.hotels[h].rooms[r].label}</option>`;
+    }).join('');
+
+  const srcOpts = ['T','W','B','AG','EX'].map(s => {
+    const sel = b && b.source === s ? 'selected' : '';
+    return `<option value="${s}" ${sel}>${srcLabel(s)}</option>`;
+  }).join('');
+
+  const hotelSquareSel = (!b || b.hotel === 'square') ? 'selected' : '';
+  const hotelPoolSel   = (b && b.hotel === 'pool')    ? 'selected' : '';
+  const discNoneSel    = discType === 'none'    ? 'selected' : '';
+  const discPctSel     = discType === 'percent' ? 'selected' : '';
+  const discFixSel     = discType === 'fixed'   ? 'selected' : '';
+  const depositChecked = depositPaid ? 'checked' : '';
+
+  document.getElementById('bookingForm').innerHTML = `
     <div class="form-group full">
       <label class="form-label">Guest name</label>
-      <input class="form-input" id="bf-guest" type="text" placeholder="Full name" value="${b?b.guest:''}">
+      <input class="form-input" id="bf-guest" type="text" placeholder="Full name" value="${guestVal}">
     </div>
     <div class="form-group">
       <label class="form-label">Hotel</label>
       <select class="form-select" id="bf-hotel" onchange="rebuildRoomOpts()">
-        <option value="square" ${(!b||b.hotel==='square')?'selected':''}>Square Hotel</option>
-        <option value="pool"   ${b&&b.hotel==='pool'?'selected':''}>Pool Hotel</option>
+        <option value="square" ${hotelSquareSel}>Square Hotel</option>
+        <option value="pool"   ${hotelPoolSel}>Pool Hotel</option>
       </select>
     </div>
     <div class="form-group">
@@ -507,11 +591,11 @@ function buildBookingForm(b,preRoom) {
     </div>
     <div class="form-group">
       <label class="form-label">Check-in</label>
-      <input class="form-input" id="bf-checkin" type="date" value="${b?b.checkin:today}">
+      <input class="form-input" id="bf-checkin" type="date" value="${checkinVal}">
     </div>
     <div class="form-group">
       <label class="form-label">Check-out</label>
-      <input class="form-input" id="bf-checkout" type="date" value="${b?b.checkout:today}">
+      <input class="form-input" id="bf-checkout" type="date" value="${checkoutVal}">
     </div>
     <div class="form-group">
       <label class="form-label">Source</label>
@@ -523,20 +607,49 @@ function buildBookingForm(b,preRoom) {
       <div class="extras-row">
         <div class="extras-field">
           <label style="font-size:12px;color:var(--text2)">Extra head (${peso(addons.extraHead)}/night each)</label>
-          <input class="form-input" id="bf-extraHead" type="number" min="0" max="10" value="${b?b.extraHead:0}" placeholder="0">
+          <input class="form-input" id="bf-extraHead" type="number" min="0" max="10"
+                 value="${extraHeadVal}" placeholder="0" oninput="updateDiscountPreview()">
         </div>
         <div class="extras-field">
           <label style="font-size:12px;color:var(--text2)">Extra bed (${peso(addons.extraBed)}/night each)</label>
-          <input class="form-input" id="bf-extraBed" type="number" min="0" max="5" value="${b?b.extraBed:0}" placeholder="0">
+          <input class="form-input" id="bf-extraBed" type="number" min="0" max="5"
+                 value="${extraBedVal}" placeholder="0" oninput="updateDiscountPreview()">
         </div>
       </div>
+    </div>
+
+    <div class="form-group full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;background:var(--amber-bg);border-radius:var(--radius-sm);padding:12px;border:1px solid #fde68a">
+      <label class="form-label" style="color:var(--amber-text)">🏷 Discount / Deal</label>
+      <div class="discount-row" style="margin-top:8px">
+        <div class="discount-type-wrap">
+          <label style="font-size:11px;color:var(--text2);margin-bottom:4px">Type</label>
+          <select class="form-select" id="bf-discountType" onchange="updateDiscountPreview()">
+            <option value="none"    ${discNoneSel}>No discount</option>
+            <option value="percent" ${discPctSel}>% off (percentage)</option>
+            <option value="fixed"   ${discFixSel}>₱ off (fixed amount)</option>
+          </select>
+        </div>
+        <div class="discount-value-wrap" id="bf-discountValueWrap">
+          <label style="font-size:11px;color:var(--text2);margin-bottom:4px">Amount</label>
+          <input class="form-input" id="bf-discountValue" type="number" min="0" step="1"
+                 placeholder="0" value="${discValue > 0 ? discValue : ''}"
+                 oninput="updateDiscountPreview()">
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <label style="font-size:11px;color:var(--text2);margin-bottom:4px;display:block">Deal / reason</label>
+        <input class="form-input" id="bf-discountNote" type="text"
+               placeholder="e.g. Booking.com weekend promo, Agoda flash sale…"
+               value="${discNote}">
+      </div>
+      <div id="bf-discountPreview" class="discount-preview" style="display:none;margin-top:10px"></div>
     </div>
 
     <div class="form-group full">
       <label class="form-label">Key deposit</label>
       <div class="deposit-row">
         <label class="deposit-check-label">
-          <input type="checkbox" id="bf-deposit" ${depositPaid?'checked':''}>
+          <input type="checkbox" id="bf-deposit" ${depositChecked}>
           <span>Key deposit received from guest</span>
         </label>
         <span class="deposit-hint">Check once guest has paid the room key deposit</span>
@@ -544,8 +657,60 @@ function buildBookingForm(b,preRoom) {
     </div>
     <div class="form-group full">
       <label class="form-label">Notes</label>
-      <textarea class="form-input" id="bf-notes" rows="2" placeholder="Optional notes…">${b?b.notes:''}</textarea>
+      <textarea class="form-input" id="bf-notes" rows="2" placeholder="Optional notes…">${notesVal}</textarea>
     </div>
+  `;
+
+  // Set initial state of discount value field
+  updateDiscountPreview();
+}
+
+function updateDiscountPreview() {
+  const typeEl  = document.getElementById('bf-discountType');
+  const valEl   = document.getElementById('bf-discountValue');
+  const preview = document.getElementById('bf-discountPreview');
+  const wrap    = document.getElementById('bf-discountValueWrap');
+  if (!typeEl || !preview) return;
+
+  const type = typeEl.value;
+  const val  = parseFloat(valEl?.value) || 0;
+
+  // Show/hide value input
+  if (wrap) wrap.style.display = type === 'none' ? 'none' : '';
+
+  if (type === 'none' || !val) { preview.style.display = 'none'; return; }
+
+  // Try to compute a live preview using current form values
+  const hotel    = document.getElementById('bf-hotel')?.value;
+  const room     = document.getElementById('bf-room')?.value;
+  const checkin  = document.getElementById('bf-checkin')?.value;
+  const checkout = document.getElementById('bf-checkout')?.value;
+  const source   = document.getElementById('bf-source')?.value;
+  const extraHead= parseInt(document.getElementById('bf-extraHead')?.value)||0;
+  const extraBed = parseInt(document.getElementById('bf-extraBed')?.value)||0;
+
+  if (!hotel || !room || !checkin || !checkout || checkin > checkout) {
+    preview.style.display = 'none'; return;
+  }
+
+  const roomDef  = DB.hotels[hotel]?.rooms[room];
+  if (!roomDef) { preview.style.display = 'none'; return; }
+
+  const ci = parseDate(checkin), co = parseDate(checkout);
+  const nights = Math.round((co - ci) / 864e5) + 1;
+  const baseRate  = (DB.prices[roomDef.type]||{})[source] || 0;
+  const addonRate = extraHead*(DB.addons.extraHead||0) + extraBed*(DB.addons.extraBed||0);
+  const gross = (baseRate + addonRate) * nights;
+
+  const fakeBooking = { discountType: type, discountValue: val };
+  const net = applyDiscount(gross, fakeBooking);
+  const saved = gross - net;
+
+  preview.style.display = 'flex';
+  preview.innerHTML = `
+    <span class="disc-prev-row"><span>Gross total</span><span>${peso(gross)}</span></span>
+    <span class="disc-prev-row disc-saved"><span>Discount (${type==='percent'?val+'%':peso(val)+' off'})</span><span>− ${peso(saved)}</span></span>
+    <span class="disc-prev-row disc-net"><span>Amount due</span><span>${peso(net)}</span></span>
   `;
 }
 
@@ -563,22 +728,26 @@ function saveBooking() {
   const checkout=document.getElementById('bf-checkout').value;
   const source  =document.getElementById('bf-source').value;
   const notes   =document.getElementById('bf-notes').value;
-  const deposit =document.getElementById('bf-deposit').checked;
-  const extraHead=parseInt(document.getElementById('bf-extraHead').value)||0;
-  const extraBed =parseInt(document.getElementById('bf-extraBed').value)||0;
+  const deposit      =document.getElementById('bf-deposit').checked;
+  const extraHead    =parseInt(document.getElementById('bf-extraHead').value)||0;
+  const extraBed     =parseInt(document.getElementById('bf-extraBed').value)||0;
+  const discountType =document.getElementById('bf-discountType').value;
+  const discountValue=parseFloat(document.getElementById('bf-discountValue').value)||0;
+  const discountNote =document.getElementById('bf-discountNote').value.trim();
 
   if(!guest)              { toast('Please enter a guest name'); return; }
   if(!checkin||!checkout) { toast('Please set check-in and check-out dates'); return; }
   if(checkin>checkout)    { toast('Check-out must be after check-in'); return; }
+  if(discountType==='percent'&&discountValue>100){ toast('Percentage discount cannot exceed 100%'); return; }
 
   let bookingId;
   if(editingBookingId){
     const i=DB.bookings.findIndex(b=>b.id===editingBookingId);
-    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed};
+    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote};
     bookingId=editingBookingId; toast('Booking updated');
   } else {
     bookingId=genId();
-    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed});
+    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote});
     toast('Booking added');
   }
   DB.keyDeposits[bookingId]=deposit;
@@ -665,19 +834,28 @@ function renderBookingsPage() {
     const roomDef=DB.hotels[b.hotel]?.rooms[b.room];
     const baseRate=roomDef?(DB.prices[roomDef.type]||{})[b.source]||0:0;
     const addonRate=(b.extraHead||0)*DB.addons.extraHead+(b.extraBed||0)*DB.addons.extraBed;
-    const total=(baseRate+addonRate)*nights;
+    const gross=(baseRate+addonRate)*nights;
+    const total=applyDiscount(gross,b);
+    const discAmt=gross-total;
+    const hasDisc=b.discountType&&b.discountType!=='none'&&b.discountValue>0;
     const extras=[];
     if(b.extraHead>0) extras.push(`+${b.extraHead} head`);
     if(b.extraBed>0)  extras.push(`+${b.extraBed} bed`);
+    const discLabel=hasDisc?(b.discountType==='percent'?`${b.discountValue}% off`:peso(b.discountValue)+' off'):'';
     html+=`<div class="booking-item" onclick="editBooking('${b.id}')">
       <span class="src-badge src-${b.source}">${srcLabel(b.source)}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500">${b.guest}</div>
+        <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px">
+          ${b.guest}
+          ${hasDisc?`<span class="disc-badge" title="${b.discountNote||'Deal applied'}">${discLabel}</span>`:''}
+        </div>
         <div style="font-size:11px;color:var(--text3)">
           Room ${b.room} · ${shortDate(b.checkin)} – ${shortDate(b.checkout)} · ${nights} night${nights!==1?'s':''}
           ${extras.length?' · '+extras.join(', '):''}
+          ${hasDisc?`<span style="color:var(--red-text)"> · −${peso(discAmt)}</span>`:''}
           · <strong>${peso(total)}</strong>
         </div>
+        ${b.discountNote?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">"${b.discountNote}"</div>`:''}
       </div>
       <button class="key-deposit-toggle ${paid?'deposit-paid':'deposit-missing'}"
               onclick="event.stopPropagation();toggleDepositUI('${b.id}',${!paid})">
