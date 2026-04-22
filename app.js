@@ -63,24 +63,7 @@ const DEFAULT_DB = {
     }
   },
   keyDeposits: {},
-  bookings: [
-    { id:'b1',  hotel:'square', room:'100', guest:'YAMAGUCHI HIROAKI',   source:'T',  checkin:'2026-01-01', checkout:'2026-01-07', notes:'', extraHead:0, extraBed:0 },
-    { id:'b2',  hotel:'square', room:'101', guest:'Bruce Hunter',         source:'W',  checkin:'2026-01-01', checkout:'2026-01-01', notes:'', extraHead:0, extraBed:0 },
-    { id:'b3',  hotel:'square', room:'102', guest:'OHASHI TAKASHI',       source:'AG', checkin:'2026-01-04', checkout:'2026-01-05', notes:'', extraHead:0, extraBed:0 },
-    { id:'b4',  hotel:'square', room:'104', guest:'Delfina',              source:'B',  checkin:'2026-01-02', checkout:'2026-01-05', notes:'', extraHead:1, extraBed:0 },
-    { id:'b5',  hotel:'square', room:'105', guest:'Nathalie Vizcayno',    source:'B',  checkin:'2026-01-02', checkout:'2026-01-04', notes:'', extraHead:0, extraBed:1 },
-    { id:'b6',  hotel:'square', room:'201', guest:'Nathalie Vizcayno',    source:'B',  checkin:'2026-01-02', checkout:'2026-01-04', notes:'', extraHead:0, extraBed:0 },
-    { id:'b7',  hotel:'square', room:'205', guest:'Simon Appelgren',      source:'W',  checkin:'2026-01-01', checkout:'2026-01-07', notes:'', extraHead:0, extraBed:0 },
-    { id:'b8',  hotel:'square', room:'303', guest:'Rene de Boer',         source:'W',  checkin:'2026-01-01', checkout:'2026-02-05', notes:'Long stay', extraHead:0, extraBed:0 },
-    { id:'b9',  hotel:'square', room:'304', guest:'Mark Pontaneles',      source:'AG', checkin:'2026-01-01', checkout:'2026-01-03', notes:'', extraHead:0, extraBed:0 },
-    { id:'b10', hotel:'pool',   room:'101', guest:'Baek Kwangjin',        source:'AG', checkin:'2026-01-01', checkout:'2026-01-04', notes:'', extraHead:0, extraBed:0 },
-    { id:'b11', hotel:'pool',   room:'102', guest:'Fernandez Jose Maria', source:'T',  checkin:'2026-01-01', checkout:'2026-01-02', notes:'', extraHead:0, extraBed:0 },
-    { id:'b12', hotel:'pool',   room:'201', guest:'THOMAS KOTKIN',        source:'AG', checkin:'2026-01-01', checkout:'2026-01-01', notes:'', extraHead:0, extraBed:0 },
-    { id:'b13', hotel:'pool',   room:'201', guest:'chong su Lee',         source:'AG', checkin:'2026-01-02', checkout:'2026-01-05', notes:'', extraHead:0, extraBed:0 },
-    { id:'b14', hotel:'pool',   room:'204', guest:'Niah Jane Acusar',     source:'AG', checkin:'2026-01-01', checkout:'2026-01-06', notes:'', extraHead:0, extraBed:0 },
-    { id:'b15', hotel:'pool',   room:'205', guest:'Zaghdoudi Bille',      source:'T',  checkin:'2026-02-01', checkout:'2026-02-07', notes:'', extraHead:0, extraBed:0 },
-    { id:'b16', hotel:'pool',   room:'201', guest:'SHIOKAI HIDEICHI',     source:'T',  checkin:'2026-02-01', checkout:'2026-02-07', notes:'', extraHead:0, extraBed:0 },
-  ],
+  bookings: [],
   prices: {
     standard: { T:1500, W:1800, B:1600, AG:1550, EX:1650 },
     family2:  { T:2200, W:2600, B:2350, AG:2300, EX:2400 },
@@ -94,28 +77,27 @@ const DEFAULT_DB = {
 };
 
 let DB = loadState() || JSON.parse(JSON.stringify(DEFAULT_DB));
-if (!DB.keyDeposits) DB.keyDeposits = {};
-if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500 };
-// Force re-migration if data version is old
-const DATA_VERSION = 2;
+
+// ── One-time wipe of old sample data ─────────────────────────────────────────
+// If the saved data still contains the old sample bookings (Bruce Hunter etc.),
+// clear it so the app starts fresh. This runs once then never again.
 try {
-  const savedVersion = parseInt(localStorage.getItem('hotel_pms_version') || '0');
-  if (savedVersion < DATA_VERSION) {
-    // Run migration on all stored bookings
-    if (DB.bookings) {
-      DB.bookings.forEach(b => {
-        if (b.discountType  === undefined) b.discountType  = 'none';
-        if (b.discountValue === undefined) b.discountValue = 0;
-        if (b.discountNote  === undefined) b.discountNote  = '';
-        if (b.extraHead     === undefined) b.extraHead     = 0;
-        if (b.extraBed      === undefined) b.extraBed      = 0;
-      });
+  const wiped = localStorage.getItem('hotel_pms_wiped_v1');
+  if (!wiped) {
+    const sampleGuests = ['Bruce Hunter','YAMAGUCHI HIROAKI','Nathalie Vizcayno',
+      'OHASHI TAKASHI','Simon Appelgren','Rene de Boer','Mark Pontaneles',
+      'Baek Kwangjin','Fernandez Jose Maria','THOMAS KOTKIN','chong su Lee',
+      'Niah Jane Acusar','Zaghdoudi Bille','SHIOKAI HIDEICHI','Delfina'];
+    const hasSampleData = DB.bookings.some(b => sampleGuests.includes(b.guest));
+    if (hasSampleData) {
+      DB = JSON.parse(JSON.stringify(DEFAULT_DB));
       saveState();
     }
-    localStorage.setItem('hotel_pms_version', DATA_VERSION);
+    localStorage.setItem('hotel_pms_wiped_v1', '1');
   }
 } catch(e) {}
-
+if (!DB.keyDeposits) DB.keyDeposits = {};
+if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500 };
 // migrate old bookings missing fields
 DB.bookings.forEach(b => {
   if (b.extraHead     === undefined) b.extraHead     = 0;
