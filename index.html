@@ -74,6 +74,9 @@
       <button class="nav-btn" id="nav-analytics" onclick="guardedShowPage('analytics',this)">
         <span class="nav-icon">📊</span><span>Analytics</span>
       </button>
+      <button class="nav-btn" id="nav-accounts" onclick="guardedShowPage('accounts',this)">
+        <span class="nav-icon">👥</span><span>Accounts</span>
+      </button>
     </nav>
 
     <!-- Session user widget -->
@@ -198,10 +201,36 @@
         </div>
       </div>
 
+      <!-- Accounts (admin only) -->
+      <div class="page" id="page-accounts">
+        <div class="section-title">
+          Account Management
+          <button class="btn btn-primary" style="font-size:12px;padding:5px 12px"
+                  onclick="openAccountModal(null)">+ Add account</button>
+        </div>
+        <div id="accountsList"></div>
+      </div>
+
     </div><!-- /.main -->
   </div><!-- /.content -->
 </div><!-- /.shell / #appShell -->
 
+
+<!-- ── Account Modal (add / edit) ────────────────────────────────────────────── -->
+<div class="overlay" id="acctModal" style="display:none"
+     onclick="if(event.target===this)closeModal('acctModal')">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-head">
+      <div class="modal-title" id="acctModalTitle">Add Account</div>
+      <button class="modal-close" onclick="closeModal('acctModal')">&#x2715;</button>
+    </div>
+    <div class="modal-body" id="acctModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"   onclick="closeModal('acctModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAccount()">Save</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Room Modal ───────────────────────────────────────────────────────────── -->
 <div class="overlay" id="roomModal" style="display:none" onclick="closeRoomModal(event)">
@@ -335,9 +364,9 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="auth.js?v=3"></script>
-<script src="import-export.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="auth.js?v=4"></script>
+<script src="import-export.js?v=4"></script>
+<script src="app.js?v=4"></script>
 
 <script>
   // Boot sequence — runs after all scripts load

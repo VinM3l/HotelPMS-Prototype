@@ -259,7 +259,7 @@ function showPage(page,el) {
   document.getElementById('page-'+page).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
-  const titles={dashboard:'Dashboard',rooms:'Room Management',bookings:'All Bookings',prices:'Room Rates',analytics:'Analytics'};
+  const titles={dashboard:'Dashboard',rooms:'Room Management',bookings:'All Bookings',prices:'Room Rates',analytics:'Analytics',accounts:'Account Management'};
   document.getElementById('topbarTitle').textContent=titles[page];
   renderAll();
 }
@@ -285,6 +285,7 @@ function renderAll() {
   else if (currentPage==='bookings')  renderBookingsPage();
   else if (currentPage==='prices')    renderPricesPage();
   else if (currentPage==='analytics') renderAnalytics();
+  else if (currentPage==='accounts')  renderAccountsPage();
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
