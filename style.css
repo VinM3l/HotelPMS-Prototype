@@ -1022,82 +1022,138 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   gap: 12px;
   flex-wrap: wrap;
 }
-.acct-summary { font-size: 14px; font-weight: 600; color: var(--text); }
-.acct-hint    { font-size: 11px; color: var(--text3); margin-top: 3px; max-width: 420px; }
+.acct-summary { font-size: 14px; font-weight: 700; color: var(--text); }
+.acct-hint    { font-size: 11px; color: var(--text3); margin-top: 4px; max-width: 480px; line-height: 1.5; }
 
-.acct-list { display: flex; flex-direction: column; gap: 8px; }
+.acct-list { display: flex; flex-direction: column; gap: 10px; }
 
 .acct-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 20px 22px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  transition: box-shadow 0.12s;
+  gap: 18px;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+  position: relative;
+  overflow: hidden;
 }
-.acct-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-.acct-inactive { opacity: 0.55; }
+.acct-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.acct-card.role-admin-card::before { background: var(--green); }
+.acct-card.role-user-card::before  { background: var(--grey2); }
+.acct-card:hover {
+  box-shadow: 0 4px 18px rgba(0,0,0,0.09);
+  border-color: var(--border2);
+  transform: translateY(-1px);
+}
+.acct-inactive {
+  opacity: 0.5;
+  background: var(--surface2);
+}
+.acct-inactive:hover { transform: none; }
 
 .acct-avatar {
-  width: 42px; height: 42px;
-  border-radius: 50%;
+  width: 50px; height: 50px;
+  border-radius: 14px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 800;
+  font-size: 20px; font-weight: 800;
   flex-shrink: 0;
   color: #fff;
+  letter-spacing: -0.5px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
-.acct-avatar.role-admin { background: var(--green); }
-.acct-avatar.role-user  { background: var(--grey2); }
+.acct-avatar.role-admin { background: linear-gradient(135deg, var(--green) 0%, var(--green-mid) 100%); }
+.acct-avatar.role-user  { background: linear-gradient(135deg, var(--grey2) 0%, #4b5563 100%); }
 
-.acct-info { flex: 1; min-width: 0; }
+.acct-info { flex: 1; min-width: 0; padding: 2px 0; }
+
 .acct-name {
-  font-size: 14px; font-weight: 700; color: var(--text);
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 15px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 5px;
 }
 .acct-you-badge {
-  font-size: 9px; font-weight: 700;
+  font-size: 9px; font-weight: 800;
   background: var(--green-light); color: var(--green-text);
   border: 1px solid var(--green-border);
-  padding: 1px 6px; border-radius: 4px;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: 20px;
+  text-transform: uppercase; letter-spacing: 0.07em;
 }
 .acct-meta {
   display: flex; align-items: center; gap: 8px;
-  margin-top: 3px; flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
-.acct-username { font-size: 12px; color: var(--text3); }
+.acct-username {
+  font-size: 12px; color: var(--text3);
+  font-family: 'Courier New', monospace;
+  background: var(--surface2); border: 1px solid var(--border);
+  padding: 1px 7px; border-radius: 4px;
+}
 .acct-role-badge {
-  font-size: 10px; font-weight: 700; padding: 2px 7px;
-  border-radius: 4px;
+  font-size: 10px; font-weight: 700; padding: 3px 9px;
+  border-radius: 20px; letter-spacing: 0.03em;
 }
-.acct-role-badge.role-admin { background: var(--green-light); color: var(--green-text); }
-.acct-role-badge.role-user  { background: var(--surface2);    color: var(--text2);     }
-.acct-status { font-size: 10px; font-weight: 600; }
-.status-active   { color: var(--green); }
-.status-inactive { color: var(--red);   }
-.acct-created { font-size: 10px; color: var(--text3); margin-top: 3px; }
+.acct-role-badge.role-admin {
+  background: var(--green-light); color: var(--green-text);
+  border: 1px solid var(--green-border);
+}
+.acct-role-badge.role-user  {
+  background: var(--surface2); color: var(--text2);
+  border: 1px solid var(--border2);
+}
+.acct-status {
+  font-size: 10px; font-weight: 700;
+  padding: 3px 9px; border-radius: 20px;
+}
+.status-active {
+  background: var(--green-light); color: var(--green-text);
+  border: 1px solid var(--green-border);
+}
+.status-inactive {
+  background: var(--red-bg); color: var(--red-text);
+  border: 1px solid #fecaca;
+}
+.acct-created {
+  font-size: 10px; color: var(--text3);
+  display: flex; align-items: center; gap: 4px;
+}
+.acct-created::before { content: '🕐'; font-size: 9px; }
 
 .acct-actions {
-  display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap;
-  justify-content: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: stretch;
+  min-width: 96px;
 }
 .acct-btn {
   font-size: 12px; font-weight: 600;
-  padding: 5px 12px; border-radius: var(--radius-sm);
+  padding: 7px 14px; border-radius: var(--radius-sm);
   border: 1px solid var(--border2);
   background: transparent; color: var(--text2);
   cursor: pointer; transition: all 0.12s;
-  white-space: nowrap;
+  white-space: nowrap; text-align: center;
+  width: 100%;
 }
-.acct-btn:hover { background: var(--green-light); color: var(--green-text); border-color: var(--green-border); }
-.acct-btn-danger:hover { background: var(--red-bg); color: var(--red-text); border-color: #fecaca; }
+.acct-btn:hover {
+  background: var(--green-light); color: var(--green-text);
+  border-color: var(--green-border);
+}
+.acct-btn-danger { border-color: #fecaca; color: var(--red-text); background: var(--red-bg); }
+.acct-btn-danger:hover { background: #fecaca; color: var(--red-text); border-color: #fca5a5; }
 .acct-btn-disabled {
-  opacity: 0.35; cursor: not-allowed;
+  opacity: 0.3; cursor: not-allowed; pointer-events: none;
 }
-.acct-btn-disabled:hover { background: transparent; color: var(--text2); border-color: var(--border2); }
