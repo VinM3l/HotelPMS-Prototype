@@ -171,7 +171,7 @@ function renderAccountsPage() {
       : '—';
 
     html += `
-      <div class="acct-card ${!acct.active ? 'acct-inactive' : ''}">
+      <div class="acct-card ${acct.role === 'admin' ? 'role-admin-card' : 'role-user-card'} ${!acct.active ? 'acct-inactive' : ''}">
         <div class="acct-avatar ${roleClass}">${acct.label.charAt(0).toUpperCase()}</div>
         <div class="acct-info">
           <div class="acct-name">
@@ -183,7 +183,7 @@ function renderAccountsPage() {
             <span class="acct-role-badge ${roleClass}">${roleLabel}</span>
             <span class="acct-status ${statusClass}">${statusLabel}</span>
           </div>
-          <div class="acct-created">Created ${created}</div>
+          <div class="acct-created">${created}</div>
         </div>
         <div class="acct-actions">
           <button class="acct-btn" onclick="openAccountModal('${username}')" title="Edit">✎ Edit</button>
