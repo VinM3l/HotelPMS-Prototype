@@ -361,29 +361,75 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 4px;
+  width: 5px;
   border-radius: var(--radius) 0 0 var(--radius);
 }
-.room-card.occupied::before    { background: var(--blue); }
-.room-card.vacant::before      { background: var(--green); }
-.room-card.maintenance::before { background: var(--amber); }
 
-.room-card.occupied  { border-left-color: rgba(37,99,235,0.2); }
-.room-card.vacant    { border-left-color: rgba(26,122,74,0.2); }
+/* ── Occupied: pastel green ── */
+.room-card.occupied {
+  background: #edf7f0;
+  border-color: #a8d5b8;
+}
+.room-card.occupied::before      { background: #16a34a; }
+.room-card.occupied .room-num        { color: #145c38; }
+.room-card.occupied .room-type-label { color: #3a8a5a; }
+.room-card.occupied .room-guest      { color: #0f4028; }
+
+/* ── Vacant: pastel blue ── */
+.room-card.vacant {
+  background: #f0f5ff;
+  border-color: #bfcfef;
+}
+.room-card.vacant::before            { background: #2563eb; }
+.room-card.vacant .room-num          { color: #1e3a8a; }
+.room-card.vacant .room-type-label   { color: #3b5ec6; }
+.room-card.vacant .vacant-label      { color: #1d4ed8; }
+.room-card.vacant .room-price-tag    { color: #1e40af; }
+
+/* ── Maintenance: light grey + dark stripe ── */
+.room-card.maintenance {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+.room-card.maintenance::before           { background: #1f2937; }
+.room-card.maintenance .room-num         { color: #374151; }
+.room-card.maintenance .room-type-label  { color: #6b7280; }
+.room-card.maintenance .maint-label      { color: #4b5563; }
+
+/* ── Extended stay: yellow ── */
+.room-card.extended {
+  background: #fefce8;
+  border-color: #fde047;
+}
+.room-card.extended::before            { background: #ca8a04; }
+.room-card.extended .room-num          { color: #713f12; }
+.room-card.extended .room-type-label   { color: #92400e; }
+.room-card.extended .room-guest        { color: #451a03; }
+
+/* ── Extended again (alt): back to green, slightly different shade ── */
+.room-card.extended-alt {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+.room-card.extended-alt::before            { background: #15803d; }
+.room-card.extended-alt .room-num          { color: #14532d; }
+.room-card.extended-alt .room-type-label   { color: #166534; }
+.room-card.extended-alt .room-guest        { color: #052e16; }
 
 .room-card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
   transform: translateY(-1px);
-  border-color: var(--border2);
+  filter: brightness(0.97);
 }
 
 .room-num        { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; color: var(--grey); }
 .room-type-label { font-size: 10px; color: var(--text3); margin-top: 1px; }
 .room-guest      { font-size: 11px; color: var(--text); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .room-bottom     { margin-top: auto; padding-top: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px; }
-.room-price-tag  { font-size: 10px; color: var(--green-text); font-weight: 600; }
-.vacant-label    { font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
-.maint-label     { font-size: 11px; color: var(--amber-text); margin-top: 6px; font-weight: 600; }
+.room-price-tag  { font-size: 10px; color: var(--blue-text); font-weight: 600; }
+.vacant-label    { font-size: 11px; color: #1d4ed8; margin-top: 6px; font-weight: 600; }
+.maint-label     { font-size: 11px; color: #4b5563; margin-top: 6px; font-weight: 600; }
+.extended-badge  { font-size: 9px; background: #fef9c3; color: #713f12; border: 1px solid #fde047; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
 
 /* ─── SOURCE BADGES ──────────────────────────────────────────────────────────── */
 .src-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.02em; }
@@ -1157,3 +1203,20 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .acct-btn-disabled {
   opacity: 0.3; cursor: not-allowed; pointer-events: none;
 }
+
+/* ─── EXTEND STAY BUTTONS ────────────────────────────────────────────────────── */
+.btn-extend-yellow {
+  background: #fef9c3;
+  color: #713f12;
+  border: 1px solid #fde047;
+  font-weight: 700;
+}
+.btn-extend-yellow:hover { background: #fde047; color: #422006; }
+
+.btn-extend-green {
+  background: #dcfce7;
+  color: #14532d;
+  border: 1px solid #86efac;
+  font-weight: 700;
+}
+.btn-extend-green:hover { background: #86efac; color: #052e16; }
