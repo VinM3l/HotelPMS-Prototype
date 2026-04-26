@@ -105,6 +105,7 @@ DB.bookings.forEach(b => {
   if (b.discountType  === undefined) b.discountType  = 'none';
   if (b.discountValue === undefined) b.discountValue = 0;
   if (b.discountNote  === undefined) b.discountNote  = '';
+  if (b.extensions    === undefined) b.extensions    = []; // array of {checkout, addedAt}
 });
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -154,7 +155,29 @@ function getRoomStatus(hotel,room,date) {
   const r=DB.hotels[hotel].rooms[room];
   if(!r) return 'vacant';
   if(r.status==='maintenance') return 'maintenance';
-  return getBookingOnDate(hotel,room,date)?'occupied':'vacant';
+  const booking=getBookingOnDate(hotel,room,date);
+  if(!booking) return 'vacant';
+  // Check if today falls within an extension period
+  const exts = booking.extensions || [];
+  if(exts.length > 0) {
+    // Find which extension window the date falls in
+    // Original checkout is booking.checkout before any extensions
+    const originalCheckout = exts[0]?.originalCheckout || booking.checkout;
+    const origCo = parseDate(originalCheckout);
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if(d > origCo) {
+      // In an extension — which number extension?
+      // extIndex: 0=first ext (yellow), 1=second ext (green-alt), alternating
+      let extIndex = -1;
+      for(let i=0; i<exts.length; i++){
+        const prevEnd = i===0 ? origCo : parseDate(exts[i-1].checkout);
+        const thisEnd = parseDate(exts[i].checkout);
+        if(d > prevEnd && d <= thisEnd){ extIndex=i; break; }
+      }
+      if(extIndex >= 0) return extIndex % 2 === 0 ? 'extended' : 'extended-alt';
+    }
+  }
+  return 'occupied';
 }
 
 // ─── INCOME CALCULATION ───────────────────────────────────────────────────────
@@ -295,8 +318,9 @@ function renderDashboard() {
   let occ=0,vac=0,maint=0,noDeposit=0;
   roomNums.forEach(r=>{
     const s=getRoomStatus(h,r,currentDate);
-    if(s==='occupied'){ occ++; } else if(s==='vacant'){ vac++; } else { maint++; }
-    if(s==='occupied'){ const b=getBookingOnDate(h,r,currentDate); if(b&&!hasKeyDeposit(b.id)) noDeposit++; }
+    const isOcc=s==='occupied'||s==='extended'||s==='extended-alt';
+    if(isOcc){ occ++; } else if(s==='vacant'){ vac++; } else { maint++; }
+    if(isOcc){ const b=getBookingOnDate(h,r,currentDate); if(b&&!hasKeyDeposit(b.id)) noDeposit++; }
   });
   const total=roomNums.length, pct=total>0?Math.round(occ/total*100):0;
 
@@ -312,9 +336,12 @@ function renderDashboard() {
   for(const [floor,rooms] of Object.entries(floorMap)){
     const filtered=rooms.filter(r=>{
       const s=getRoomStatus(h,r,currentDate);
+      const isOcc=s==='occupied'||s==='extended'||s==='extended-alt';
       if(filterStatus==='no-deposit'){
-        if(s!=='occupied') return false;
+        if(!isOcc) return false;
         const b=getBookingOnDate(h,r,currentDate); if(!b||hasKeyDeposit(b.id)) return false;
+      } else if(filterStatus==='occupied'){
+        if(!isOcc) return false;
       } else if(filterStatus!=='all'&&s!==filterStatus){ return false; }
       if(searchQ){
         const q=searchQ.toLowerCase();
@@ -335,8 +362,9 @@ function renderDashboard() {
       const isCheckout=booking&&fmtDate(currentDate)===booking.checkout;
       const isCheckin=booking&&fmtDate(currentDate)===booking.checkin;
       const depositPaid=booking?hasKeyDeposit(booking.id):false;
+      const isExtended=status==='extended'||status==='extended-alt';
       html+=`<div class="room-card ${status}" onclick="openRoom('${r}')">`;
-      if(status==='occupied'&&booking)
+      if((status==='occupied'||isExtended)&&booking)
         html+=`<div class="key-dot ${depositPaid?'key-paid':'key-missing'}" title="${depositPaid?'Deposit paid':'No deposit'}">🔑</div>`;
       html+=`<div class="room-num">Room ${r}</div><div class="room-type-label">${room.label}</div>`;
       if(status==='maintenance'){
@@ -352,6 +380,7 @@ function renderDashboard() {
             <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">
               ${isCheckout?'<span class="checkout-badge">Checkout</span>':''}
               ${isCheckin&&!isCheckout?'<span class="checkin-badge">Check-in</span>':''}
+              ${isExtended?'<span class="extended-badge">Extended</span>':''}
               ${!depositPaid?'<span class="no-deposit-badge">No deposit</span>':''}
             </div>
           </div>`;
@@ -515,11 +544,76 @@ function editBooking(id) {
   closeModal('roomModal');
   document.getElementById('bmTitle').textContent='Edit Booking';
   buildBookingForm(b,null);
+  const exts=b.extensions||[];
+  const extCount=exts.length;
+  const extLabel=extCount===0?'Extend Stay':`Extend Again (×${extCount+1})`;
+  const extClass=extCount%2===0?'btn-extend-yellow':'btn-extend-green';
   document.getElementById('bookingModalFooter').innerHTML=`
     <button class="btn btn-danger" onclick="deleteBooking('${id}')">Delete</button>
     <button class="btn btn-ghost"  onclick="closeModal('bookingModal')">Cancel</button>
+    <button class="btn ${extClass}" onclick="openExtendStay('${id}')">⟳ ${extLabel}</button>
     <button class="btn btn-primary" onclick="saveBooking()">Save Changes</button>`;
   document.getElementById('bookingModal').style.display='flex';
+}
+
+function openExtendStay(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  const currentCheckout = b.checkout;
+  const exts = b.extensions||[];
+  const extNum = exts.length+1;
+
+  // Insert a mini extend panel into the modal body above the footer
+  const existing=document.getElementById('extendPanel');
+  if(existing) existing.remove();
+
+  const panel=document.createElement('div');
+  panel.id='extendPanel';
+  panel.style.cssText='border-top:1px solid var(--border);padding-top:12px;margin-top:12px';
+  panel.innerHTML=`
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:${extNum%2!==0?'#713f12':'#14532d'};margin-bottom:8px">
+      ${extNum%2!==0?'🟡':'🟢'} Extension #${extNum}
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+      Current checkout: <strong>${shortDate(currentCheckout)}</strong>. Set new checkout date:
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="form-input" id="extNewCheckout" type="date"
+             min="${currentCheckout}" value="${currentCheckout}"
+             style="flex:1">
+      <button class="btn btn-primary" style="flex-shrink:0" onclick="confirmExtendStay('${id}')">Confirm</button>
+      <button class="btn btn-ghost"   style="flex-shrink:0" onclick="document.getElementById('extendPanel').remove()">Cancel</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px">
+      Extended days will appear ${extNum%2!==0?'yellow':'green'} on the dashboard and calendar.
+    </div>
+  `;
+  document.getElementById('bookingForm').appendChild(panel);
+  document.getElementById('extNewCheckout').focus();
+}
+
+function confirmExtendStay(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  const newCheckout=document.getElementById('extNewCheckout').value;
+  if(!newCheckout||newCheckout<=b.checkout){
+    toast('New checkout must be after current checkout'); return;
+  }
+
+  if(!b.extensions) b.extensions=[];
+  const originalCheckout=b.extensions.length===0?b.checkout:b.extensions[0].originalCheckout;
+  b.extensions.push({
+    originalCheckout,
+    previousCheckout: b.checkout,
+    checkout: newCheckout,
+    addedAt: new Date().toISOString(),
+    addedBy: currentUser?.username||'unknown',
+  });
+  b.checkout=newCheckout; // advance the actual checkout
+  saveState();
+
+  const extNum=b.extensions.length;
+  toast(`✅ Stay extended to ${shortDate(newCheckout)} (Extension #${extNum})`);
+  closeModal('bookingModal');
+  renderAll();
 }
 
 function buildBookingForm(b, preRoom) {
