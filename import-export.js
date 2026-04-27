@@ -1,276 +1,389 @@
-// ─── IMPORT / EXPORT  (SheetJS / xlsx.js)  ───────────────────────────────────
-// Mirrors the original format: one sheet per hotel per month.
-// Rows = rooms, columns = dates, cells = "SOURCE - ROOM GUEST/NAME"
-// Each workbook covers the current month PLUS 2 future months (≥ 3 months total).
-//
-// SheetJS is loaded lazily from CDN on first use.
+// ─── IMPORT / EXPORT ─────────────────────────────────────────────────────────
+// EXPORT: uses ExcelJS (supports full cell colouring/styling)
+// IMPORT: uses SheetJS  (lightweight, great for reading)
+// Both load from CDN on first use.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SHEETJS_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+const EXCELJS_CDN  = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+const SHEETJS_CDN  = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
-// ── CDN loader ────────────────────────────────────────────────────────────────
-function loadSheetJS() {
+function loadScript(url, windowKey) {
   return new Promise((resolve, reject) => {
-    if (window.XLSX) { resolve(window.XLSX); return; }
+    if (window[windowKey]) { resolve(window[windowKey]); return; }
     const s = document.createElement('script');
-    s.src = SHEETJS_CDN;
-    s.onload  = () => resolve(window.XLSX);
-    s.onerror = () => reject(new Error('Failed to load SheetJS'));
+    s.src = url;
+    s.onload  = () => resolve(window[windowKey]);
+    s.onerror = () => reject(new Error(`Failed to load ${url}`));
     document.head.appendChild(s);
   });
 }
+const loadExcelJS = () => loadScript(EXCELJS_CDN, 'ExcelJS');
+const loadSheetJS = () => loadScript(SHEETJS_CDN, 'XLSX');
 
-// ── Source code map ───────────────────────────────────────────────────────────
-const SRC_CODE = { T:'T', W:'W', B:'B', AG:'Ag', EX:'Ex' };
+// ─── COLOUR PALETTE (matches dashboard CSS exactly) ──────────────────────────
+const COLOURS = {
+  // Header
+  headerBg:    '1A7A4A',
+  headerFg:    'FFFFFF',
+  titleFg:     '1A7A4A',
+  // Occupied: darker pastel green
+  occBg:       'C6EDD5',
+  occFg:       '145C38',
+  occBorder:   '7DC4A0',
+  // Extended #1: yellow
+  extBg:       'FEF9C3',
+  extFg:       '713F12',
+  extBorder:   'FDE047',
+  // Extended #2 alt: deeper green
+  ext2Bg:      'DCFCE7',
+  ext2Fg:      '14532D',
+  ext2Border:  '86EFAC',
+  // Maintenance: light grey
+  maintBg:     'F3F4F6',
+  maintFg:     '4B5563',
+  // Vacant: white
+  vacantBg:    'FFFFFF',
+  vacantFg:    '9CA3AF',
+  // Alternating row tint
+  altBg:       'F9FAFB',
+  // Summary / totals
+  totalsBg:    'EDF7F0',
+  notesBg:     'F0F9F5',
+};
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
+// ─── DATE / PERIOD HELPERS ────────────────────────────────────────────────────
 function startOfMonth(y, m) { return new Date(y, m, 1); }
 function endOfMonth(y, m)   { return new Date(y, m + 1, 0); }
 function daysInMonth(y, m)  { return new Date(y, m + 1, 0).getDate(); }
-function addMonths(date, n) { return new Date(date.getFullYear(), date.getMonth() + n, 1); }
 
-/** Returns array of { year, month (0-based) } for 3 months starting from today's month */
 function getExportMonths() {
-  const now = new Date();
+  const now  = new Date();
   const base = new Date(now.getFullYear(), now.getMonth(), 1);
-  // Start 1 month back so recent data is included, giving 3 future + 1 past = 4 total; but
-  // spec says "3 months minimum" so we'll do currentMonth-1 → currentMonth+2 (4 months).
   const months = [];
   for (let i = -1; i <= 2; i++) {
-    const d = addMonths(base, i);
+    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
     months.push({ year: d.getFullYear(), month: d.getMonth() });
   }
   return months;
 }
 
-// Sheet name mirrors the original: "Jan 2026" / "Jan 2026-Pool"
-function sheetName(hotelKey, year, month) {
+function excelSheetName(hotelKey, year, month) {
   const label = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   return hotelKey === 'pool' ? `${label}-Pool` : label;
 }
 
-// ── EXPORT ────────────────────────────────────────────────────────────────────
-async function exportToExcel() {
-  toast('Preparing export…');
-  const XLSX = await loadSheetJS().catch(() => null);
-  if (!XLSX) { toast('Could not load Excel library — check your connection'); return; }
+const SRC_CODE = { T:'T', W:'W', B:'B', AG:'Ag', EX:'Ex' };
 
-  const wb = XLSX.utils.book_new();
-  const months = getExportMonths();
-  const hotels = ['square', 'pool'];
-
-  for (const { year, month } of months) {
-    for (const hotelKey of hotels) {
-      const hotel   = DB.hotels[hotelKey];
-      if (!hotel) continue;
-      const rooms   = sortRoomKeys(Object.keys(hotel.rooms));
-      const days    = daysInMonth(year, month);
-      const ws      = buildSheetForMonth(XLSX, hotelKey, hotel, rooms, year, month, days);
-      const name    = sheetName(hotelKey, year, month);
-      XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31)); // Excel limit: 31 chars
-    }
-  }
-
-  // Summary sheet
-  const summaryWs = buildSummarySheet(XLSX, months);
-  XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
-
-  const filename = `HotelPMS_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  toast(`✅ Exported ${filename}`);
+// ─── CELL TYPE DETECTION ──────────────────────────────────────────────────────
+function getCellType(cellText) {
+  if (!cellText)                     return 'vacant';
+  if (cellText === 'MAINT')          return 'maint';
+  if (cellText.includes('[EXT2]'))   return 'ext2';
+  if (cellText.includes('[EXT]'))    return 'ext';
+  return 'occupied';
 }
 
-function buildSheetForMonth(XLSX, hotelKey, hotel, rooms, year, month, days) {
-  // Header row: [Room, Type, Jan 1, Jan 2, ... Jan N, Total Nights, Total Income]
-  const monthStart = startOfMonth(year, month);
-  const monthEnd   = endOfMonth(year, month);
+// ─── EXCELJS STYLE HELPERS ────────────────────────────────────────────────────
+function hexFill(hex) {
+  return { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } };
+}
+function hexFont(hex, opts = {}) {
+  return { color: { argb: 'FF' + hex }, name: 'Arial', size: opts.size || 9,
+           bold: opts.bold || false, italic: opts.italic || false };
+}
+function thinBorder(hex) {
+  const s = { style: 'thin', color: { argb: 'FF' + hex } };
+  return { top: s, bottom: s, left: s, right: s };
+}
 
-  // Build AOA (array of arrays)
-  const aoa = [];
+function applyHeaderStyle(cell) {
+  cell.fill      = hexFill(COLOURS.headerBg);
+  cell.font      = hexFont(COLOURS.headerFg, { bold: true, size: 10 });
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  cell.border    = thinBorder('AAAAAA');
+}
 
-  // ── Row 0: title row ──────────────────────────────────────────────────────
-  const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  aoa.push([`${hotel.name} — ${monthLabel}`]);
+function applyTitleStyle(cell) {
+  cell.font      = hexFont(COLOURS.titleFg, { bold: true, size: 13 });
+  cell.fill      = hexFill('E8F5EE');
+  cell.alignment = { horizontal: 'left', vertical: 'middle' };
+}
 
-  // ── Row 1: column headers ─────────────────────────────────────────────────
-  const headerRow = ['Room', 'Type'];
-  for (let d = 1; d <= days; d++) {
-    const date = new Date(year, month, d);
-    // Mirror original: short weekday + date number
-    headerRow.push(date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }));
+function applyCellStyle(cell, type, isAltRow) {
+  const rowBg = isAltRow ? COLOURS.altBg : COLOURS.vacantBg;
+  switch (type) {
+    case 'occupied':
+      cell.fill   = hexFill(COLOURS.occBg);
+      cell.font   = hexFont(COLOURS.occFg, { size: 9 });
+      cell.border = thinBorder(COLOURS.occBorder);
+      break;
+    case 'ext':
+      cell.fill   = hexFill(COLOURS.extBg);
+      cell.font   = hexFont(COLOURS.extFg, { bold: true, size: 9 });
+      cell.border = thinBorder(COLOURS.extBorder);
+      break;
+    case 'ext2':
+      cell.fill   = hexFill(COLOURS.ext2Bg);
+      cell.font   = hexFont(COLOURS.ext2Fg, { bold: true, size: 9 });
+      cell.border = thinBorder(COLOURS.ext2Border);
+      break;
+    case 'maint':
+      cell.fill   = hexFill(COLOURS.maintBg);
+      cell.font   = hexFont(COLOURS.maintFg, { italic: true, size: 9 });
+      cell.border = thinBorder('D1D5DB');
+      break;
+    default: // vacant
+      cell.fill   = hexFill(rowBg);
+      cell.font   = hexFont(COLOURS.vacantFg, { size: 9 });
+      cell.border = thinBorder('E5E7EB');
   }
-  headerRow.push('Nights', 'Est. Income (₱)', 'Key Deposit', 'Notes');
-  aoa.push(headerRow);
+  cell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+}
 
-  // ── Data rows: one per room ────────────────────────────────────────────────
-  for (const roomNum of rooms) {
-    const roomDef  = hotel.rooms[roomNum];
-    const row      = [roomNum, roomDef.label];
-    let totalNights = 0;
-    let totalIncome = 0;
+// ─── BUILD ONE SHEET ──────────────────────────────────────────────────────────
+function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
+  const days      = daysInMonth(year, month);
+  const mStart    = startOfMonth(year, month);
+  const mEnd      = endOfMonth(year, month);
+  const monthLabel = mStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const sheetName  = excelSheetName(hotelKey, year, month);
+
+  const ws = wb.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }]
+  });
+
+  // ── Column widths ──
+  ws.getColumn(1).width = 8;   // Room
+  ws.getColumn(2).width = 18;  // Type (hidden in compact view)
+  for (let d = 1; d <= days; d++) ws.getColumn(d + 2).width = 23;
+  ws.getColumn(days + 3).width = 9;   // Nights
+  ws.getColumn(days + 4).width = 16;  // Income
+  ws.getColumn(days + 5).width = 12;  // Deposit
+  ws.getColumn(days + 6).width = 28;  // Notes
+
+  // ── Row 1: Title ──
+  const titleRow = ws.getRow(1);
+  titleRow.height = 22;
+  const titleCell = titleRow.getCell(1);
+  titleCell.value = `${hotel.name} — ${monthLabel}`;
+  applyTitleStyle(titleCell);
+  ws.mergeCells(1, 1, 1, days + 6);
+
+  // ── Row 2: Headers ──
+  const hdrRow = ws.getRow(2);
+  hdrRow.height = 18;
+  const headers = ['Room', 'Type'];
+  for (let d = 1; d <= days; d++) {
+    const dt = new Date(year, month, d);
+    headers.push(dt.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }));
+  }
+  headers.push('Nights', 'Est. Income (₱)', 'Key Deposit', 'Notes');
+  headers.forEach((h, i) => {
+    const c = hdrRow.getCell(i + 1);
+    c.value = h;
+    applyHeaderStyle(c);
+  });
+
+  // ── Data rows ──
+  const sortedRooms = [...rooms].sort((a, b) => {
+    const an = /^\d+$/.test(a), bn = /^\d+$/.test(b);
+    if (an && bn) return parseInt(a) - parseInt(b);
+    if (an) return -1; if (bn) return 1;
+    return a.localeCompare(b);
+  });
+
+  sortedRooms.forEach((roomNum, ri) => {
+    const roomDef   = hotel.rooms[roomNum];
+    const rowIdx    = ri + 3;
+    const isAlt     = ri % 2 === 1;
+    const row       = ws.getRow(rowIdx);
+    row.height      = 30;
+
+    // Room number cell
+    const roomCell  = row.getCell(1);
+    roomCell.value  = roomNum;
+    roomCell.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
+    roomCell.font   = hexFont('374151', { bold: true, size: 10 });
+    roomCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    roomCell.border = thinBorder('D1D5DB');
+
+    // Type cell
+    const typeCell  = row.getCell(2);
+    typeCell.value  = roomDef.label;
+    typeCell.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
+    typeCell.font   = hexFont('6B7280', { size: 9 });
+    typeCell.alignment = { vertical: 'middle' };
+    typeCell.border = thinBorder('D1D5DB');
+
+    let totalNights = 0, totalIncome = 0;
 
     for (let d = 1; d <= days; d++) {
       const date    = new Date(year, month, d);
       const booking = DB.bookings.find(b =>
-        b.hotel === hotelKey &&
-        b.room  === roomNum  &&
-        isInRange(date, b.checkin, b.checkout)
+        b.hotel === hotelKey && b.room === roomNum && isInRange(date, b.checkin, b.checkout)
       );
 
+      const col  = d + 2;
+      const cell = row.getCell(col);
+
       if (booking) {
-        // Mirror original cell style: "SOURCE - ROOM GUEST/NAME"
         const src  = SRC_CODE[booking.source] || booking.source;
         const name = booking.guest.toUpperCase();
-        let cell = `${src} - ${roomNum} ${name}`;
-        // Add extras note inline if any
-        if (booking.extraHead > 0) cell += ` +${booking.extraHead}H`;
-        if (booking.extraBed  > 0) cell += ` +${booking.extraBed}B`;
-        row.push(cell);
+        let txt    = `${src} - ${roomNum} ${name}`;
+        if (booking.extraHead > 0) txt += ` +${booking.extraHead}H`;
+        if (booking.extraBed  > 0) txt += ` +${booking.extraBed}B`;
+
+        // Detect extension period
+        const exts = booking.extensions || [];
+        if (exts.length > 0) {
+          const origCo = parseDate(exts[0].originalCheckout || booking.checkout);
+          const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          if (d0 > origCo) {
+            for (let ei = 0; ei < exts.length; ei++) {
+              const prevEnd = ei === 0 ? origCo : parseDate(exts[ei-1].checkout);
+              const thisEnd = parseDate(exts[ei].checkout);
+              if (d0 > prevEnd && d0 <= thisEnd) {
+                txt += ei % 2 === 0 ? ' [EXT]' : ' [EXT2]';
+                break;
+              }
+            }
+          }
+        }
+
+        cell.value = txt;
+        applyCellStyle(cell, getCellType(txt), isAlt);
         totalNights++;
-        // Income for this night
+
         const baseRate = (DB.prices[roomDef.type] || {})[booking.source] || 0;
-        const addon    = (booking.extraHead || 0) * (DB.addons.extraHead || 0)
-                       + (booking.extraBed  || 0) * (DB.addons.extraBed  || 0);
+        const addon    = (booking.extraHead||0)*(DB.addons.extraHead||0)
+                       + (booking.extraBed||0)*(DB.addons.extraBed||0);
         totalIncome += baseRate + addon;
+
       } else if (roomDef.status === 'maintenance') {
-        row.push('MAINT');
+        cell.value = 'MAINT';
+        applyCellStyle(cell, 'maint', isAlt);
       } else {
-        row.push('');
+        cell.value = '';
+        applyCellStyle(cell, 'vacant', isAlt);
       }
     }
 
-    // Find all bookings for this room in this month for deposit & notes
+    // Totals columns
     const monthBookings = DB.bookings.filter(b => {
       if (b.hotel !== hotelKey || b.room !== roomNum) return false;
       const ci = parseDate(b.checkin), co = parseDate(b.checkout);
-      return ci <= monthEnd && co >= monthStart;
+      return ci <= mEnd && co >= mStart;
     });
-    const depositAll = monthBookings.every(b => hasKeyDeposit(b.id));
-    const depositStr = monthBookings.length === 0 ? '' : depositAll ? 'Yes' : 'No';
+    const depositAll = monthBookings.length > 0 && monthBookings.every(b => hasKeyDeposit(b.id));
     const noteStr    = monthBookings.map(b => b.notes).filter(Boolean).join('; ');
 
-    row.push(totalNights, totalIncome, depositStr, noteStr);
-    aoa.push(row);
-  }
+    const statStyle = { fill: hexFill(COLOURS.notesBg), font: hexFont('374151', { size: 10 }), border: thinBorder('D1D5DB') };
 
-  // ── Footer: totals row ────────────────────────────────────────────────────
-  const footerRow = ['TOTALS', ''];
+    const nc = row.getCell(days + 3);
+    nc.value = totalNights;
+    Object.assign(nc, statStyle);
+
+    const ic = row.getCell(days + 4);
+    ic.value     = totalIncome;
+    ic.numFmt    = '₱#,##0';
+    ic.fill      = statStyle.fill;
+    ic.font      = hexFont('145C38', { bold: true, size: 10 });
+    ic.border    = statStyle.border;
+
+    const dc = row.getCell(days + 5);
+    dc.value = monthBookings.length === 0 ? '' : depositAll ? 'Yes' : 'No';
+    Object.assign(dc, statStyle);
+
+    const notec = row.getCell(days + 6);
+    notec.value = noteStr;
+    Object.assign(notec, statStyle);
+    notec.alignment = { vertical: 'middle', wrapText: true };
+  });
+
+  // ── Footer: occupancy count per day ──
+  const footerRow = ws.getRow(sortedRooms.length + 3);
+  footerRow.height = 16;
+  const fc0 = footerRow.getCell(1);
+  fc0.value  = 'TOTALS';
+  fc0.fill   = hexFill(COLOURS.totalsBg);
+  fc0.font   = hexFont('145C38', { bold: true, size: 10 });
+  fc0.border = thinBorder('7DC4A0');
+  footerRow.getCell(2).fill = hexFill(COLOURS.totalsBg);
+
   for (let d = 1; d <= days; d++) {
     const date = new Date(year, month, d);
-    const occCount = rooms.filter(r =>
+    const cnt  = sortedRooms.filter(r =>
       DB.bookings.some(b => b.hotel === hotelKey && b.room === r && isInRange(date, b.checkin, b.checkout))
     ).length;
-    footerRow.push(occCount > 0 ? `${occCount} occ` : '');
+    const fc = footerRow.getCell(d + 2);
+    fc.value  = cnt > 0 ? `${cnt} occ` : '';
+    fc.fill   = hexFill(COLOURS.totalsBg);
+    fc.font   = hexFont('145C38', { size: 9, bold: cnt > 0 });
+    fc.alignment = { horizontal: 'center', vertical: 'middle' };
+    fc.border = thinBorder('7DC4A0');
   }
-  footerRow.push('', ''); // Nights, Income placeholders
-  aoa.push(footerRow);
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // ── Column widths ─────────────────────────────────────────────────────────
-  ws['!cols'] = [
-    { wch: 7  },  // Room
-    { wch: 18 },  // Type
-    ...Array(days).fill({ wch: 22 }),  // Date columns
-    { wch: 9  },  // Nights
-    { wch: 16 },  // Income
-    { wch: 12 },  // Deposit
-    { wch: 25 },  // Notes
-  ];
-
-  // ── Styling via cell meta (limited in SheetJS community edition) ──────────
-  // We encode basic styles using the 's' property where supported
-  styleSheet(XLSX, ws, aoa, days);
-
-  return ws;
 }
 
-function styleSheet(XLSX, ws, aoa, days) {
-  // SheetJS CE supports basic style objects when using the 'xlsx' write mode
-  const HEADER_STYLE = {
-    font: { bold: true, color: { rgb: 'FFFFFF' } },
-    fill: { fgColor: { rgb: '1A7A4A' } },
-    alignment: { horizontal: 'center', wrapText: true },
-    border: { bottom: { style: 'thin', color: { rgb: 'AAAAAA' } } }
-  };
-  const TITLE_STYLE = {
-    font: { bold: true, sz: 13, color: { rgb: '1A7A4A' } }
-  };
-  const OCC_STYLE = {
-    fill: { fgColor: { rgb: 'D1FAE5' } },
-    font: { sz: 9, color: { rgb: '145C38' } },
-    alignment: { wrapText: true, vertical: 'center' }
-  };
-  const MAINT_STYLE = {
-    fill: { fgColor: { rgb: 'FFFBEB' } },
-    font: { sz: 9, color: { rgb: '92400E' }, italic: true }
-  };
-  const ALT_ROW = {
-    fill: { fgColor: { rgb: 'F4F9F6' } }
+// ─── BUILD SUMMARY SHEET ──────────────────────────────────────────────────────
+function buildSummarySheet(wb, months) {
+  const ws = wb.addWorksheet('Summary');
+  ws.getColumn(1).width = 28;
+  ws.getColumn(2).width = 16;
+  ws.getColumn(3).width = 14;
+  ws.getColumn(4).width = 14;
+  ws.getColumn(5).width = 22;
+  ws.getColumn(6).width = 12;
+
+  let rowIdx = 1;
+
+  const addTitle = (text) => {
+    const row = ws.getRow(rowIdx++);
+    const c   = row.getCell(1);
+    c.value   = text;
+    c.font    = hexFont(COLOURS.titleFg, { bold: true, size: 13 });
+    c.fill    = hexFill('E8F5EE');
+    row.height = 20;
   };
 
-  const totalCols = 2 + days + 4; // Room+Type + dates + Nights+Income+Deposit+Notes
+  const addHeader = (cols) => {
+    const row = ws.getRow(rowIdx++);
+    cols.forEach((h, i) => {
+      const c = row.getCell(i + 1);
+      c.value = h;
+      applyHeaderStyle(c);
+    });
+    row.height = 16;
+  };
 
-  for (const addr in ws) {
-    if (addr[0] === '!') continue;
-    const cell = ws[addr];
-    const ref  = XLSX.utils.decode_cell(addr);
-    const r    = ref.r, c = ref.c;
-
-    if (r === 0) { cell.s = TITLE_STYLE; continue; }
-    if (r === 1) { cell.s = HEADER_STYLE; continue; }
-
-    // Last row (totals)
-    if (r === aoa.length - 1) {
-      cell.s = { font: { bold: true }, fill: { fgColor: { rgb: 'E8F5EE' } } };
-      continue;
-    }
-
-    // Room + Type columns
-    if (c === 0 || c === 1) {
-      cell.s = { font: { bold: c === 0 }, fill: { fgColor: { rgb: r % 2 === 0 ? 'FFFFFF' : 'F4F9F6' } } };
-      continue;
-    }
-
-    // Date columns
-    if (c >= 2 && c < 2 + days) {
-      const val = cell.v;
-      if (typeof val === 'string' && val && val !== 'MAINT') {
-        cell.s = OCC_STYLE;
-      } else if (val === 'MAINT') {
-        cell.s = MAINT_STYLE;
-      } else {
-        cell.s = r % 2 === 0 ? {} : ALT_ROW;
+  const addDataRow = (cols, isAlt) => {
+    const row = ws.getRow(rowIdx++);
+    cols.forEach((v, i) => {
+      const c = row.getCell(i + 1);
+      c.value  = v;
+      c.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
+      c.font   = hexFont('374151', { size: 10 });
+      c.border = thinBorder('E5E7EB');
+      if (typeof v === 'number' && i === 4) {
+        c.numFmt = '₱#,##0';
+        c.font   = hexFont('145C38', { bold: true, size: 10 });
       }
-      continue;
-    }
+    });
+    row.height = 16;
+  };
 
-    // Nights / Income / Deposit / Notes columns
-    if (c >= 2 + days) {
-      cell.s = { font: { bold: c === 2 + days + 1 }, fill: { fgColor: { rgb: 'F0F9F5' } } };
-    }
-  }
+  addTitle('Hotel PMS — Export Summary');
+  rowIdx++; // spacer
 
-  // Freeze header rows and first two columns
-  ws['!freeze'] = { xSplit: 2, ySplit: 2, topLeftCell: 'C3', activePane: 'bottomRight', state: 'frozen' };
-}
-
-// ── Summary sheet ─────────────────────────────────────────────────────────────
-function buildSummarySheet(XLSX, months) {
-  const aoa = [];
-  aoa.push(['Hotel PMS — Export Summary', '', `Generated: ${new Date().toLocaleDateString('en-PH', { dateStyle: 'long' })}`]);
-  aoa.push([]);
-
-  const hotels = [
-    { key: 'square', label: 'Square Hotel' },
-    { key: 'pool',   label: 'Pool Hotel'   },
-  ];
-
+  const hotels = [{ key:'square', label:'Square Hotel' }, { key:'pool', label:'Pool Hotel' }];
   for (const { key, label } of hotels) {
-    aoa.push([label]);
-    aoa.push(['Month', 'Occupied Nights', 'Total Rooms', 'Occupancy %', 'Estimated Income (₱)', 'Bookings']);
+    const hRow = ws.getRow(rowIdx++);
+    const hc   = hRow.getCell(1);
+    hc.value   = label;
+    hc.font    = hexFont('1A7A4A', { bold: true, size: 12 });
+    hRow.height = 18;
 
-    for (const { year, month } of months) {
+    addHeader(['Month', 'Occupied Nights', 'Total Rooms', 'Occupancy %', 'Est. Income (₱)', 'Bookings']);
+    months.forEach(({ year, month }, mi) => {
       const mLabel   = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       const mStart   = startOfMonth(year, month);
       const mEnd     = endOfMonth(year, month);
@@ -287,39 +400,73 @@ function buildSummarySheet(XLSX, months) {
           }
         }
       }
-
       const income = incomeForRange(key, mStart, mEnd);
-      const bookingsInMonth = DB.bookings.filter(b => {
+      const bkCount = DB.bookings.filter(b => {
         if (b.hotel !== key) return false;
         const ci = parseDate(b.checkin), co = parseDate(b.checkout);
         return ci <= mEnd && co >= mStart;
       }).length;
-
       const pct = totalSlots > 0 ? (occNights / totalSlots * 100).toFixed(1) + '%' : '0%';
-      aoa.push([mLabel, occNights, rooms.length, pct, income, bookingsInMonth]);
-    }
-    aoa.push([]); // spacer
+      addDataRow([mLabel, occNights, rooms.length, pct, income, bkCount], mi % 2 === 1);
+    });
+    rowIdx++; // spacer
   }
 
   // Rate table
-  aoa.push(['Room Rates (₱ per night)']);
-  aoa.push(['Type', 'Trip.com', 'Walk-in', 'Booking.com', 'Agoda', 'Expedia']);
-  const types = [['standard', 'Standard Room'], ['family2', 'Family Room (2 pax)'], ['family3', 'Family Room (3 pax)']];
-  for (const [key, name] of types) {
+  addTitle('Room Rates (₱ per night)');
+  addHeader(['Type', 'Trip.com', 'Walk-in', 'Booking.com', 'Agoda', 'Expedia']);
+  const types = [['standard','Standard Room'],['family2','Family (2 pax)'],['family3','Family (3 pax)']];
+  types.forEach(([key, name], i) => {
     const p = DB.prices[key] || {};
-    aoa.push([name, p.T||0, p.W||0, p.B||0, p.AG||0, p.EX||0]);
-  }
-  aoa.push([]);
-  aoa.push(['Add-on Rates (₱ per night)']);
-  aoa.push(['Extra Head', DB.addons.extraHead || 0]);
-  aoa.push(['Extra Bed',  DB.addons.extraBed  || 0]);
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }];
-  return ws;
+    addDataRow([name, p.T||0, p.W||0, p.B||0, p.AG||0, p.EX||0], i % 2 === 1);
+  });
+  rowIdx++;
+  addTitle('Add-on Rates (₱ per night)');
+  addDataRow(['Extra Head (per person)', DB.addons.extraHead||0], false);
+  addDataRow(['Extra Bed (per bed)', DB.addons.extraBed||0], true);
 }
 
-// ── IMPORT ────────────────────────────────────────────────────────────────────
+// ─── EXPORT ENTRY POINT ───────────────────────────────────────────────────────
+async function exportToExcel() {
+  toast('Preparing export…');
+  const ExcelJS = await loadExcelJS().catch(() => null);
+  if (!ExcelJS) { toast('Could not load ExcelJS — check your connection'); return; }
+
+  const wb     = new ExcelJS.Workbook();
+  wb.creator   = 'Hotel PMS';
+  wb.created   = new Date();
+  wb.modified  = new Date();
+
+  const months = getExportMonths();
+  const hotels = ['square', 'pool'];
+
+  for (const { year, month } of months) {
+    for (const hotelKey of hotels) {
+      const hotel = DB.hotels[hotelKey];
+      if (!hotel) continue;
+      const rooms = Object.keys(hotel.rooms);
+      buildSheet(wb, hotelKey, hotel, rooms, year, month);
+    }
+  }
+
+  buildSummarySheet(wb, months);
+
+  // Write to buffer and trigger download
+  const buffer   = await wb.xlsx.writeBuffer();
+  const blob     = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url      = URL.createObjectURL(blob);
+  const a        = document.createElement('a');
+  a.href         = url;
+  a.download     = `HotelPMS_${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  toast('✅ Excel exported with colours!');
+}
+
+// ─── IMPORT (SheetJS — unchanged) ────────────────────────────────────────────
 async function importFromExcel(file) {
   toast('Reading file…');
   const XLSX = await loadSheetJS().catch(() => null);
@@ -337,115 +484,86 @@ async function importFromExcel(file) {
   let imported = 0, skipped = 0, errors = [];
 
   for (const sheetName of wb.SheetNames) {
-    if (sheetName === 'Summary') continue;
+    if (sheetName === 'Summary' || sheetName === 'HOW TO IMPORT') continue;
 
-    // Detect hotel from sheet name: names ending in "-Pool" → pool, else square
-    const hotelKey = sheetName.toLowerCase().includes('pool') ? 'pool' : 'square';
-
-    // Parse month/year from sheet name: "Jan 2026" or "Jan 2026-Pool"
-    const namePart = sheetName.replace(/-Pool$/i, '').trim();
+    const hotelKey   = sheetName.toLowerCase().includes('pool') ? 'pool' : 'square';
+    const namePart   = sheetName.replace(/-Pool$/i, '').trim();
     const parsedDate = new Date(namePart + ' 1');
     if (isNaN(parsedDate)) { errors.push(`Unrecognised sheet: ${sheetName}`); continue; }
+
     const year  = parsedDate.getFullYear();
     const month = parsedDate.getMonth();
     const days  = daysInMonth(year, month);
+    const ws    = wb.Sheets[sheetName];
+    const aoa   = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (aoa.length < 3) continue;
 
-    const ws  = wb.Sheets[sheetName];
-    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-    if (aoa.length < 3) continue; // too short to have data
-
-    // Find header row (row index 1 in our export, but be flexible)
     let headerRow = -1;
     for (let r = 0; r < Math.min(5, aoa.length); r++) {
       if (String(aoa[r][0]).toLowerCase().includes('room')) { headerRow = r; break; }
     }
-    if (headerRow === -1) { errors.push(`No header found in ${sheetName}`); continue; }
+    if (headerRow === -1) { errors.push(`No header in ${sheetName}`); continue; }
 
-    // Build date→col map from header
-    const header = aoa[headerRow];
-    const dateColMap = {}; // col index → day number
+    const header     = aoa[headerRow];
+    const dateColMap = {};
     for (let c = 2; c < header.length; c++) {
-      const h = String(header[c]);
-      // Extract day number from strings like "Mon 1", "Tue 2", or just "1"
-      const match = h.match(/(\d+)/);
+      const match = String(header[c]).match(/(\d+)/);
       if (match) dateColMap[c] = parseInt(match[1]);
     }
 
-    // Process data rows (skip header, skip totals/footer)
     for (let r = headerRow + 1; r < aoa.length; r++) {
-      const row = aoa[r];
+      const row     = aoa[r];
       const roomNum = String(row[0]).trim();
       if (!roomNum || roomNum.toUpperCase() === 'TOTALS') continue;
-      if (!DB.hotels[hotelKey]?.rooms[roomNum]) continue; // room not in system
+      if (!DB.hotels[hotelKey]?.rooms[roomNum]) continue;
 
-      // Scan each date column
       for (const [colStr, day] of Object.entries(dateColMap)) {
-        const col = parseInt(colStr);
-        const cellVal = String(row[col] || '').trim();
+        const col     = parseInt(colStr);
+        const cellVal = String(row[col] || '').trim().replace(/\s*\[EXT2?\]\s*/gi, '').trim();
         if (!cellVal || cellVal === 'MAINT') continue;
 
-        // Parse cell: "SOURCE - ROOM GUESTNAME" or "AG - 101 GUEST NAME"
-        // Flexible parser: try to extract source code and guest name
         const { source, guest, extraHead, extraBed } = parseCellValue(cellVal);
         if (!guest) continue;
 
-        // Find if this booking already exists (by guest + room + overlap)
-        const cellDate   = new Date(year, month, day);
-        const existing   = DB.bookings.find(b =>
-          b.hotel === hotelKey &&
-          b.room  === roomNum  &&
+        const cellDate = new Date(year, month, day);
+        const existing = DB.bookings.find(b =>
+          b.hotel === hotelKey && b.room === roomNum &&
           b.guest.toUpperCase() === guest.toUpperCase() &&
           isInRange(cellDate, b.checkin, b.checkout)
         );
         if (existing) { skipped++; continue; }
 
-        // Find contiguous run of same guest in same room to determine check-in/out
         let runStart = day, runEnd = day;
-        // Look backwards
         for (let d2 = day - 1; d2 >= 1; d2--) {
           const c2 = Object.entries(dateColMap).find(([,v]) => v === d2)?.[0];
           if (!c2) break;
-          const v2 = String(row[parseInt(c2)] || '').trim();
+          const v2 = String(row[parseInt(c2)] || '').trim().replace(/\s*\[EXT2?\]\s*/gi,'').trim();
           if (v2 && parseCellValue(v2).guest?.toUpperCase() === guest.toUpperCase()) runStart = d2;
           else break;
         }
-        // Look forwards
         for (let d2 = day + 1; d2 <= days; d2++) {
           const c2 = Object.entries(dateColMap).find(([,v]) => v === d2)?.[0];
           if (!c2) break;
-          const v2 = String(row[parseInt(c2)] || '').trim();
+          const v2 = String(row[parseInt(c2)] || '').trim().replace(/\s*\[EXT2?\]\s*/gi,'').trim();
           if (v2 && parseCellValue(v2).guest?.toUpperCase() === guest.toUpperCase()) runEnd = d2;
           else break;
         }
-
-        // Only create booking on the first day of the run
         if (runStart !== day) continue;
 
         const checkin  = fmtDate(new Date(year, month, runStart));
         const checkout = fmtDate(new Date(year, month, runEnd));
-
-        // Check we don't already have this booking (different approach)
         const dup = DB.bookings.find(b =>
-          b.hotel    === hotelKey &&
-          b.room     === roomNum  &&
-          b.checkin  === checkin  &&
-          b.checkout === checkout &&
+          b.hotel === hotelKey && b.room === roomNum &&
+          b.checkin === checkin && b.checkout === checkout &&
           b.guest.toUpperCase() === guest.toUpperCase()
         );
         if (dup) { skipped++; continue; }
 
         DB.bookings.push({
-          id:        genId(),
-          hotel:     hotelKey,
-          room:      roomNum,
-          guest:     toTitleCase(guest),
-          source:    source,
-          checkin,
-          checkout,
-          notes:     '',
-          extraHead: extraHead || 0,
-          extraBed:  extraBed  || 0,
+          id: genId(), hotel: hotelKey, room: roomNum,
+          guest: toTitleCase(guest), source, checkin, checkout,
+          notes: '', extraHead: extraHead||0, extraBed: extraBed||0,
+          extensions: [],
         });
         imported++;
       }
@@ -455,36 +573,31 @@ async function importFromExcel(file) {
   saveState();
   renderAll();
 
-  let msg = `✅ Import done — ${imported} booking${imported !== 1 ? 's' : ''} added`;
-  if (skipped) msg += `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
+  let msg = `✅ Import done — ${imported} booking${imported!==1?'s':''} added`;
+  if (skipped) msg += `, ${skipped} duplicate${skipped!==1?'s':''} skipped`;
   if (errors.length) msg += `. Warnings: ${errors.join('; ')}`;
   toast(msg);
   closeModal('importExportModal');
 }
 
-// Parse a cell value like "T - 101 YAMAGUCHI HIROAKI +1H" into components
+// ─── CELL PARSER ─────────────────────────────────────────────────────────────
 function parseCellValue(raw) {
   let source = 'W', guest = '', extraHead = 0, extraBed = 0;
+  let str    = raw.replace(/\s*\[EXT2?\]\s*/gi, '').trim();
 
-  // Strip extra head/bed tags first
-  let str = raw;
   const headMatch = str.match(/\+(\d+)H/i);
   const bedMatch  = str.match(/\+(\d+)B/i);
-  if (headMatch) { extraHead = parseInt(headMatch[1]); str = str.replace(headMatch[0], '').trim(); }
-  if (bedMatch)  { extraBed  = parseInt(bedMatch[1]);  str = str.replace(bedMatch[0],  '').trim(); }
+  if (headMatch) { extraHead = parseInt(headMatch[1]); str = str.replace(headMatch[0],'').trim(); }
+  if (bedMatch)  { extraBed  = parseInt(bedMatch[1]);  str = str.replace(bedMatch[0],'').trim(); }
 
-  // Source code at start before " - "
-  const srcMap = { 'T':'T', 'W':'W', 'B':'B', 'AG':'AG', 'AGB':'AG', 'EX':'EX', 'EXB':'EX', 'Ag':'AG', 'Ex':'EX' };
+  const srcMap   = { T:'T', W:'W', B:'B', AG:'AG', AGB:'AG', EX:'EX', EXB:'EX', Ag:'AG', Ex:'EX' };
   const srcMatch = str.match(/^([A-Za-z]+)\s*-\s*/);
   if (srcMatch) {
     const code = srcMatch[1].trim();
     source = srcMap[code] || srcMap[code.toUpperCase()] || 'W';
-    str = str.slice(srcMatch[0].length).trim();
+    str    = str.slice(srcMatch[0].length).trim();
   }
-
-  // Remove room number prefix if present (e.g. "101 GUEST NAME")
-  str = str.replace(/^\d+\s+/, '').trim();
-
+  str   = str.replace(/^\d+\s+/, '').trim();
   guest = str.replace(/\s+/g, ' ').trim();
   return { source, guest, extraHead, extraBed };
 }
@@ -493,15 +606,9 @@ function toTitleCase(s) {
   return s.toLowerCase().replace(/(?:^|\s|\/)\S/g, c => c.toUpperCase());
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
-function openImportExport() {
-  document.getElementById('importExportModal').style.display = 'flex';
-}
-
-function triggerImportFile() {
-  document.getElementById('importFileInput').click();
-}
-
+// ─── UI HELPERS ───────────────────────────────────────────────────────────────
+function openImportExport()  { document.getElementById('importExportModal').style.display = 'flex'; }
+function triggerImportFile() { document.getElementById('importFileInput').click(); }
 function handleImportFile(input) {
   const file = input.files[0];
   if (!file) return;
