@@ -441,6 +441,39 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 
 .checkout-badge   { font-size: 9px; background: var(--red-bg);    color: var(--red-text);   padding: 2px 5px; border-radius: 4px; font-weight: 700; }
 .checkin-badge    { font-size: 9px; background: var(--green-light);color: var(--green-text); padding: 2px 5px; border-radius: 4px; font-weight: 700; }
+
+/* ── Balance paid: blue bg — guest has settled their bill ── */
+.room-card.balance-paid {
+  background: #93c5fd !important;
+  border-color: #3b82f6 !important;
+}
+.room-card.balance-paid::before          { background: #1d4ed8 !important; }
+.room-card.balance-paid .room-num        { color: #1e3a8a !important; }
+.room-card.balance-paid .room-type-label { color: #1e40af !important; }
+.room-card.balance-paid .room-guest      { color: #1e3a8a !important; }
+
+/* Balance toggle buttons */
+.balance-paid-btn {
+  background: #dbeafe !important;
+  color: #1e40af !important;
+  border-color: #93c5fd !important;
+}
+.balance-unpaid-btn {
+  background: var(--surface2) !important;
+  color: var(--text2) !important;
+  border-color: var(--border2) !important;
+}
+
+/* Paid badge on room card */
+.paid-badge {
+  font-size: 9px;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
 .no-deposit-badge { font-size: 9px; background: #fff3cd;           color: #856404;            padding: 2px 5px; border-radius: 4px; font-weight: 700; }
 
 /* ─── KEY DEPOSIT ────────────────────────────────────────────────────────────── */
