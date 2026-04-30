@@ -100,13 +100,18 @@ if (!DB.keyDeposits) DB.keyDeposits = {};
 if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500 };
 // migrate old bookings missing fields
 DB.bookings.forEach(b => {
-  if (b.extraHead     === undefined) b.extraHead     = 0;
-  if (b.extraBed      === undefined) b.extraBed      = 0;
-  if (b.discountType  === undefined) b.discountType  = 'none';
-  if (b.discountValue === undefined) b.discountValue = 0;
-  if (b.discountNote  === undefined) b.discountNote  = '';
-  if (b.extensions    === undefined) b.extensions    = [];
-  if (b.balancePaid   === undefined) b.balancePaid   = false;
+  if (b.extraHead       === undefined) b.extraHead       = 0;
+  if (b.extraBed        === undefined) b.extraBed        = 0;
+  if (b.discountType    === undefined) b.discountType    = 'none';
+  if (b.discountValue   === undefined) b.discountValue   = 0;
+  if (b.discountNote    === undefined) b.discountNote    = '';
+  if (b.extensions      === undefined) b.extensions      = [];
+  // migrate old balancePaid boolean → balancePaidDate
+  if (b.balancePaid === true && !b.balancePaidDate) {
+    b.balancePaidDate = fmtDate(new Date()); // treat as paid today
+  }
+  if (b.balancePaid !== undefined) delete b.balancePaid;
+  if (b.balancePaidDate === undefined) b.balancePaidDate = null;
 });
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -261,14 +266,17 @@ function toggleDepositUI(id,val) {
   toast(val?'🔑 Key deposit marked as paid':'Key deposit cleared');
 }
 
-function toggleBalanceUI(id,val) {
+function toggleBalanceUI(id, val) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  b.balancePaid=val;
+  b.balancePaidDate = val ? fmtDate(currentDate) : null;
   saveState();
-  if(activeRoom) renderRoomCalendar();
+  if(activeRoom) {
+    const todayBooking=getBookingOnDate(currentHotel,activeRoom,currentDate);
+    if(todayBooking) renderRoomGuest(); else renderRoomCalendar();
+  }
   renderDashboard();
   if(currentPage==='bookings') renderBookingsPage();
-  toast(val?'💰 Balance marked as settled':'Balance marked as unsettled');
+  toast(val?`💰 Balance paid — marked for ${dateStr(currentDate)}`:'Balance marked as unsettled');
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
@@ -373,13 +381,29 @@ function renderDashboard() {
       const isCheckout=booking&&fmtDate(currentDate)===booking.checkout;
       const isCheckin=booking&&fmtDate(currentDate)===booking.checkin;
       const depositPaid=booking?hasKeyDeposit(booking.id):false;
-      const balancePaid=booking?booking.balancePaid:false;
       const isExtended=status==='extended'||status==='extended-alt';
-      // Blue = balance settled; extended overrides colour only if not paid
-      const cardClass=balancePaid?'balance-paid':(isExtended?status:'');
+
+      // Blue ONLY on the specific date payment was made
+      const paidDate=booking?.balancePaidDate||null;
+      const isPaidToday=paidDate&&paidDate===fmtDate(currentDate);
+      const cardClass=isPaidToday?'balance-paid':(isExtended?status:'');
+
+      // Check for a second booking overlapping today (two guests same room same day)
+      const allTodayBookings=DB.bookings.filter(b=>
+        b.hotel===h&&b.room===r&&isInRange(currentDate,b.checkin,b.checkout)
+      );
+      const hasMultiGuest=allTodayBookings.length>1;
+
       html+=`<div class="room-card ${status} ${cardClass}" onclick="openRoom('${r}')">`;
+
+      // 🔑 key dot — top right
       if((status==='occupied'||isExtended)&&booking)
         html+=`<div class="key-dot ${depositPaid?'key-paid':'key-missing'}" title="${depositPaid?'Deposit paid':'No deposit'}">🔑</div>`;
+
+      // 👥 multi-guest corner — top left
+      if(hasMultiGuest)
+        html+=`<div class="multi-guest-dot" title="${allTodayBookings.length} guests today">👥</div>`;
+
       html+=`<div class="room-num">Room ${r}</div><div class="room-type-label">${room.label}</div>`;
       if(status==='maintenance'){
         html+=`<div class="maint-label">⚠ Maintenance</div>`;
@@ -387,15 +411,19 @@ function renderDashboard() {
         const extras=[];
         if(booking.extraHead>0) extras.push(`+${booking.extraHead} head`);
         if(booking.extraBed>0)  extras.push(`+${booking.extraBed} bed`);
-        html+=`<div class="room-guest">${booking.guest}</div>
+        // Show both guests if two today
+        const guestLine=hasMultiGuest
+          ? allTodayBookings.map(b=>b.guest.split(' ')[0]).join(' & ')
+          : booking.guest;
+        html+=`<div class="room-guest">${guestLine}</div>
           ${extras.length?`<div style="font-size:9px;color:var(--text3);margin-top:1px">${extras.join(' · ')}</div>`:''}
           <div class="room-bottom">
             <span class="src-badge src-${booking.source}">${srcShort(booking.source)}</span>
             <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">
               ${isCheckin&&!isCheckout?'<span class="checkin-badge">Check-in</span>':''}
               ${isCheckout?'<span class="checkout-badge">Checkout</span>':''}
-              ${isExtended&&!balancePaid?'<span class="extended-badge">Extended</span>':''}
-              ${balancePaid?'<span class="paid-badge">Paid ✓</span>':''}
+              ${isExtended&&!isPaidToday?'<span class="extended-badge">Extended</span>':''}
+              ${isPaidToday?'<span class="paid-badge">Paid ✓</span>':''}
               ${!depositPaid?'<span class="no-deposit-badge">No deposit</span>':''}
             </div>
           </div>`;
@@ -414,25 +442,122 @@ function renderDashboard() {
 // ─── ROOM MODAL ───────────────────────────────────────────────────────────────
 function openRoom(room) {
   activeRoom=room; calYear=currentDate.getFullYear(); calMonth=currentDate.getMonth();
-  const h=currentHotel,r=DB.hotels[h].rooms[room];
+  const h=currentHotel, r=DB.hotels[h].rooms[room];
   document.getElementById('rmTitle').textContent=`Room ${room}`;
   document.getElementById('rmSub').textContent=`${DB.hotels[h].name} · ${r.label}`;
-  switchRmTab('calendar',null);
+
+  // If there's a current guest today, open on the Guest tab
+  const todayBooking=getBookingOnDate(h,room,currentDate);
+  if(todayBooking) {
+    switchRmTab('guest',null);
+  } else {
+    switchRmTab('calendar',null);
+  }
   document.getElementById('roomModal').style.display='flex';
 }
-function openAddBookingForRoom() { closeModal('roomModal'); openAddBooking(activeRoom); }
-function closeRoomModal(e) { if(e.target===document.getElementById('roomModal')) closeModal('roomModal'); }
 
 function switchRmTab(tab,el) {
   activeRmTab=tab;
   document.querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
-  if(el){ el.classList.add('active'); } else {
+  if(el) {
+    el.classList.add('active');
+  } else {
+    const tabMap={'guest':0,'calendar':1,'details':2};
     const tabs=document.querySelectorAll('.modal-tab');
-    if(tabs[tab==='calendar'?0:1]) tabs[tab==='calendar'?0:1].classList.add('active');
+    if(tabs[tabMap[tab]!==undefined?tabMap[tab]:1]) tabs[tabMap[tab]!==undefined?tabMap[tab]:1].classList.add('active');
   }
-  document.getElementById('rmTabCalendar').style.display=tab==='calendar'?'block':'none';
-  document.getElementById('rmTabDetails').style.display =tab==='details' ?'block':'none';
-  if(tab==='calendar') renderRoomCalendar(); else renderRoomDetails();
+  document.getElementById('rmTabGuest').style.display   = tab==='guest'    ? 'block':'none';
+  document.getElementById('rmTabCalendar').style.display= tab==='calendar' ? 'block':'none';
+  document.getElementById('rmTabDetails').style.display = tab==='details'  ? 'block':'none';
+  if(tab==='guest')    renderRoomGuest();
+  else if(tab==='calendar') renderRoomCalendar();
+  else renderRoomDetails();
+}
+
+function renderRoomGuest() {
+  const h=currentHotel, room=activeRoom;
+  // All bookings active today — could be two guests checking in/out same day
+  const todayBookings=DB.bookings.filter(b=>
+    b.hotel===h&&b.room===room&&isInRange(currentDate,b.checkin,b.checkout)
+  );
+
+  if(!todayBookings.length) {
+    document.getElementById('rmTabGuest').innerHTML=`
+      <div class="empty"><div class="empty-icon">🚪</div>No guest today.</div>`;
+    return;
+  }
+
+  let html='';
+  todayBookings.forEach((b,idx)=>{
+    const paid        = hasKeyDeposit(b.id);
+    const paidDate    = b.balancePaidDate||null;
+    const isPaidToday = paidDate&&paidDate===fmtDate(currentDate);
+    const isCheckin   = fmtDate(currentDate)===b.checkin;
+    const isCheckout  = fmtDate(currentDate)===b.checkout;
+    const nights      = Math.round((parseDate(b.checkout)-parseDate(b.checkin))/864e5)+1;
+    const roomDef     = DB.hotels[h].rooms[room];
+    const baseRate    = (DB.prices[roomDef?.type]||{})[b.source]||0;
+    const addon       = (b.extraHead||0)*(DB.addons.extraHead||0)+(b.extraBed||0)*(DB.addons.extraBed||0);
+    const gross       = (baseRate+addon)*nights;
+    const total       = applyDiscount(gross,b);
+    const exts        = b.extensions||[];
+    const isExtended  = exts.length>0;
+
+    if(idx>0) html+=`<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">`;
+
+    html+=`<div class="guest-panel">
+      <div class="guest-panel-head">
+        <div>
+          <div class="guest-panel-name">${b.guest}</div>
+          <div class="guest-panel-meta">
+            <span class="src-badge src-${b.source}">${srcLabel(b.source)}</span>
+            ${isCheckin?'<span class="checkin-badge">Checking in today</span>':''}
+            ${isCheckout?'<span class="checkout-badge">Checking out today</span>':''}
+            ${isExtended?'<span class="extended-badge">Extended ×'+exts.length+'</span>':''}
+          </div>
+        </div>
+      </div>
+
+      <div class="guest-panel-grid">
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-in</div><div class="guest-panel-stat-val">${shortDate(b.checkin)}</div></div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-out</div><div class="guest-panel-stat-val">${shortDate(b.checkout)}</div></div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Nights</div><div class="guest-panel-stat-val">${nights}</div></div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Total</div><div class="guest-panel-stat-val" style="color:var(--green-text)">${peso(total)}</div></div>
+      </div>
+
+      ${b.extraHead>0||b.extraBed>0?`
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        ${b.extraHead>0?`+${b.extraHead} extra head · `:''}${b.extraBed>0?`+${b.extraBed} extra bed`:''}
+      </div>`:''}
+
+      ${b.discountType&&b.discountType!=='none'&&b.discountValue>0?`
+      <div style="font-size:11px;background:var(--amber-bg);border:1px solid #fde68a;border-radius:var(--radius-sm);padding:6px 10px;margin-bottom:10px">
+        🏷 ${b.discountType==='percent'?b.discountValue+'% off':peso(b.discountValue)+' off'}
+        ${b.discountNote?` — "${b.discountNote}"`:''}
+      </div>`:''}
+
+      <div class="guest-panel-actions">
+        <button class="guest-action-btn ${paid?'action-active-green':'action-inactive'}"
+                onclick="toggleDepositUI('${b.id}',${!paid})">
+          🔑 ${paid?'Deposit paid':'Mark deposit paid'}
+        </button>
+        <button class="guest-action-btn ${paidDate?'action-active-blue':'action-inactive'}"
+                onclick="toggleBalanceUI('${b.id}',${!paidDate})">
+          💰 ${paidDate?'Balance settled · '+shortDate(paidDate):'Mark balance paid'}
+        </button>
+        <button class="guest-action-btn action-yellow"
+                onclick="closeModal('roomModal');openExtendStay('${b.id}')">
+          ⟳ Extend stay
+        </button>
+        <button class="guest-action-btn action-edit"
+                onclick="editBooking('${b.id}')">
+          ✎ Edit booking
+        </button>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('rmTabGuest').innerHTML=html;
 }
 
 function renderRoomCalendar() {
@@ -649,7 +774,7 @@ function buildBookingForm(b, preRoom) {
   const discNote       = b ? (b.discountNote  || '')     : '';
   const notesVal       = b ? (b.notes || '')  : '';
   const depositPaid    = b ? hasKeyDeposit(b.id) : false;
-  const balancePaidVal = b ? (b.balancePaid || false) : false;
+  const balancePaidVal = b ? (b.balancePaidDate || null) : null;
   const addons         = DB.addons;
 
   const roomOpts = sortRoomKeys(Object.keys(DB.hotels[h].rooms))
@@ -758,9 +883,9 @@ function buildBookingForm(b, preRoom) {
       <div class="deposit-row" style="margin-top:8px">
         <label class="deposit-check-label">
           <input type="checkbox" id="bf-balancePaid" ${balancePaidVal?'checked':''}>
-          <span>Balance has been paid in full</span>
+          <span>Balance has been paid in full ${balancePaidVal?`<span style="font-size:10px;color:var(--text3)">(paid ${shortDate(balancePaidVal)})</span>`:''}</span>
         </label>
-        <span class="deposit-hint">Marks the room blue — settled guests, extensions, or debts cleared</span>
+        <span class="deposit-hint">Records today's date as the payment date — turns the room blue on that day</span>
       </div>
     </div>
 
@@ -839,6 +964,9 @@ function saveBooking() {
   const notes   =document.getElementById('bf-notes').value;
   const deposit      =document.getElementById('bf-deposit').checked;
   const balancePaid  =document.getElementById('bf-balancePaid')?.checked||false;
+  const balancePaidDate = balancePaid
+    ? (editingBookingId && DB.bookings.find(b=>b.id===editingBookingId)?.balancePaidDate) || fmtDate(new Date())
+    : null;
   const extraHead    =parseInt(document.getElementById('bf-extraHead').value)||0;
   const extraBed     =parseInt(document.getElementById('bf-extraBed').value)||0;
   const discountType =document.getElementById('bf-discountType').value;
@@ -853,11 +981,11 @@ function saveBooking() {
   let bookingId;
   if(editingBookingId){
     const i=DB.bookings.findIndex(b=>b.id===editingBookingId);
-    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaid};
+    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaidDate};
     bookingId=editingBookingId; toast('Booking updated');
   } else {
     bookingId=genId();
-    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaid,extensions:[]});
+    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaidDate,extensions:[]});
     toast('Booking added');
   }
   DB.keyDeposits[bookingId]=deposit;

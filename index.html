@@ -242,11 +242,13 @@
     </div>
     <div class="modal-body">
       <div class="modal-tabs">
-        <button class="modal-tab active" onclick="switchRmTab('calendar',this)">Calendar</button>
+        <button class="modal-tab active" onclick="switchRmTab('guest',this)">👤 Guest</button>
+        <button class="modal-tab"        onclick="switchRmTab('calendar',this)">Calendar</button>
         <button class="modal-tab"        onclick="switchRmTab('details',this)">Details</button>
       </div>
-      <div id="rmTabCalendar"></div>
-      <div id="rmTabDetails" style="display:none"></div>
+      <div id="rmTabGuest"></div>
+      <div id="rmTabCalendar" style="display:none"></div>
+      <div id="rmTabDetails"  style="display:none"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost"   onclick="closeModal('roomModal')">Close</button>
@@ -362,9 +364,9 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="auth.js?v=14"></script>
-<script src="import-export.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="auth.js?v=15"></script>
+<script src="import-export.js?v=15"></script>
+<script src="app.js?v=15"></script>
 
 <script>
   // Boot sequence — runs after all scripts load

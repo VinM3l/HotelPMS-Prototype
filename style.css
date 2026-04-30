@@ -1253,3 +1253,67 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   font-weight: 700;
 }
 .btn-extend-green:hover { background: #86efac; color: #052e16; }
+
+/* ─── MULTI-GUEST CORNER DOT ─────────────────────────────────────────────────── */
+.multi-guest-dot {
+  position: absolute;
+  top: 8px; left: 8px;
+  font-size: 11px;
+  line-height: 1;
+  z-index: 1;
+}
+
+/* ─── CURRENT GUEST PANEL ────────────────────────────────────────────────────── */
+.guest-panel { padding: 2px 0; }
+
+.guest-panel-head { margin-bottom: 12px; }
+.guest-panel-name {
+  font-size: 17px; font-weight: 800; color: var(--text);
+  letter-spacing: -0.3px; margin-bottom: 5px;
+}
+.guest-panel-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+.guest-panel-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 8px; margin-bottom: 12px;
+}
+.guest-panel-stat {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.guest-panel-stat-label { font-size: 9px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
+.guest-panel-stat-val   { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px; }
+
+.guest-panel-actions {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; margin-top: 14px;
+}
+.guest-action-btn {
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border2); font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit; text-align: left;
+  transition: all 0.13s;
+  display: flex; align-items: center; gap: 6px;
+}
+.action-active-green {
+  background: var(--green-light); color: var(--green-text);
+  border-color: var(--green-border);
+}
+.action-active-blue {
+  background: #dbeafe; color: #1e40af;
+  border-color: #93c5fd;
+}
+.action-inactive {
+  background: var(--surface2); color: var(--text2);
+}
+.action-inactive:hover { background: var(--surface); border-color: var(--border2); }
+.action-yellow {
+  background: #fefce8; color: #713f12;
+  border-color: #fde047;
+}
+.action-yellow:hover { background: #fde047; }
+.action-edit {
+  background: var(--surface2); color: var(--text2);
+  border-color: var(--border2);
+}
+.action-edit:hover { background: var(--surface); }
