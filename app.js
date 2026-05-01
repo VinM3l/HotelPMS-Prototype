@@ -394,15 +394,16 @@ function renderDashboard() {
       );
       const hasMultiGuest=allTodayBookings.length>1;
 
-      html+=`<div class="room-card ${status} ${cardClass}" onclick="openRoom('${r}')">`;
+      html+=`<div class="room-card ${status} ${cardClass}" data-room="${r}" data-guest-idx="0" onclick="openRoom('${r}')">`;
 
       // 🔑 key dot — top right
       if((status==='occupied'||isExtended)&&booking)
         html+=`<div class="key-dot ${depositPaid?'key-paid':'key-missing'}" title="${depositPaid?'Deposit paid':'No deposit'}">🔑</div>`;
 
-      // 👥 multi-guest corner — top left
+      // 👥 multi-guest icon — top left, click toggles shown guest
       if(hasMultiGuest)
-        html+=`<div class="multi-guest-dot" title="${allTodayBookings.length} guests today">👥</div>`;
+        html+=`<div class="multi-guest-dot" title="Toggle guests (${allTodayBookings.length} today)"
+                    onclick="event.stopPropagation();toggleGuestView('${r}')">👥</div>`;
 
       html+=`<div class="room-num">Room ${r}</div><div class="room-type-label">${room.label}</div>`;
       if(status==='maintenance'){
@@ -411,14 +412,11 @@ function renderDashboard() {
         const extras=[];
         if(booking.extraHead>0) extras.push(`+${booking.extraHead} head`);
         if(booking.extraBed>0)  extras.push(`+${booking.extraBed} bed`);
-        // Show both guests if two today
-        const guestLine=hasMultiGuest
-          ? allTodayBookings.map(b=>b.guest.split(' ')[0]).join(' & ')
-          : booking.guest;
-        html+=`<div class="room-guest">${guestLine}</div>
+        // Always show booking[0] initially; toggleGuestView swaps content
+        html+=`<div class="room-guest" data-field="guest">${booking.guest}</div>
           ${extras.length?`<div style="font-size:9px;color:var(--text3);margin-top:1px">${extras.join(' · ')}</div>`:''}
           <div class="room-bottom">
-            <span class="src-badge src-${booking.source}">${srcShort(booking.source)}</span>
+            <span class="src-badge src-${booking.source}" data-field="src-badge">${srcShort(booking.source)}</span>
             <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">
               ${isCheckin&&!isCheckout?'<span class="checkin-badge">Check-in</span>':''}
               ${isCheckout?'<span class="checkout-badge">Checkout</span>':''}
@@ -437,6 +435,35 @@ function renderDashboard() {
   }
   if(!html) html=`<div class="empty"><div class="empty-icon">🔍</div>No rooms match your filter.</div>`;
   document.getElementById('roomsArea').innerHTML=html;
+}
+
+// Toggle which guest is shown on a multi-guest card (no modal open)
+function toggleGuestView(roomNum) {
+  const h=currentHotel;
+  const card=document.querySelector(`.room-card[data-room="${roomNum}"]`);
+  if(!card) return;
+
+  const allBookings=DB.bookings.filter(b=>
+    b.hotel===h&&b.room===roomNum&&isInRange(currentDate,b.checkin,b.checkout)
+  );
+  if(allBookings.length<2) return;
+
+  const currentIdx=parseInt(card.dataset.guestIdx||'0');
+  const nextIdx=(currentIdx+1)%allBookings.length;
+  card.dataset.guestIdx=nextIdx;
+
+  const b=allBookings[nextIdx];
+  const guestEl=card.querySelector('[data-field="guest"]');
+  const srcEl  =card.querySelector('[data-field="src-badge"]');
+  if(guestEl) guestEl.textContent=b.guest;
+  if(srcEl) {
+    srcEl.className=`src-badge src-${b.source}`;
+    srcEl.textContent=srcShort(b.source);
+  }
+
+  // Flash the 👥 icon to signal the swap
+  const dot=card.querySelector('.multi-guest-dot');
+  if(dot){ dot.style.transform='scale(1.4)'; setTimeout(()=>dot.style.transform='',200); }
 }
 
 // ─── ROOM MODAL ───────────────────────────────────────────────────────────────

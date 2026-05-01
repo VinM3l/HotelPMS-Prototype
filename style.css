@@ -1260,8 +1260,12 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   top: 8px; left: 8px;
   font-size: 11px;
   line-height: 1;
-  z-index: 1;
+  z-index: 2;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  user-select: none;
 }
+.multi-guest-dot:hover { transform: scale(1.3); }
 
 /* ─── CURRENT GUEST PANEL ────────────────────────────────────────────────────── */
 .guest-panel { padding: 2px 0; }
