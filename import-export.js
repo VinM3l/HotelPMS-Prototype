@@ -44,6 +44,18 @@ const COLOURS = {
   // Vacant: white
   vacantBg:    'FFFFFF',
   vacantFg:    '9CA3AF',
+  // Balance paid: blue
+  paidBg:      '93C5FD',
+  paidFg:      '1E3A8A',
+  paidBorder:  '3B82F6',
+  // Partial payment: light blue-purple
+  partialBg:   'BFDBFE',
+  partialFg:   '1E3A8A',
+  partialBorder:'60A5FA',
+  // Multi-guest: slightly warmer tint to distinguish
+  multiOccBg:  'B8E8CC',
+  multiOccFg:  '0D3D22',
+  multiOccBorder: '5AAF84',
   // Alternating row tint
   altBg:       'F9FAFB',
   // Summary / totals
@@ -76,10 +88,13 @@ const SRC_CODE = { T:'T', W:'W', B:'B', AG:'Ag', EX:'Ex' };
 
 // ─── CELL TYPE DETECTION ──────────────────────────────────────────────────────
 function getCellType(cellText) {
-  if (!cellText)                     return 'vacant';
-  if (cellText === 'MAINT')          return 'maint';
-  if (cellText.includes('[EXT2]'))   return 'ext2';
-  if (cellText.includes('[EXT]'))    return 'ext';
+  if (!cellText)                      return 'vacant';
+  if (cellText === 'MAINT')           return 'maint';
+  if (cellText.includes('[PAID]'))    return 'paid';
+  if (cellText.includes('[PART]'))    return 'partial';
+  if (cellText.includes('[2G]'))      return 'multi';
+  if (cellText.includes('[EXT2]'))    return 'ext2';
+  if (cellText.includes('[EXT]'))     return 'ext';
   return 'occupied';
 }
 
@@ -116,6 +131,21 @@ function applyCellStyle(cell, type, isAltRow) {
       cell.fill   = hexFill(COLOURS.occBg);
       cell.font   = hexFont(COLOURS.occFg, { size: 9 });
       cell.border = thinBorder(COLOURS.occBorder);
+      break;
+    case 'paid':
+      cell.fill   = hexFill(COLOURS.paidBg);
+      cell.font   = hexFont(COLOURS.paidFg, { bold: true, size: 9 });
+      cell.border = thinBorder(COLOURS.paidBorder);
+      break;
+    case 'partial':
+      cell.fill   = hexFill(COLOURS.partialBg);
+      cell.font   = hexFont(COLOURS.partialFg, { size: 9 });
+      cell.border = thinBorder(COLOURS.partialBorder);
+      break;
+    case 'multi':
+      cell.fill   = hexFill(COLOURS.multiOccBg);
+      cell.font   = hexFont(COLOURS.multiOccFg, { size: 8 });
+      cell.border = thinBorder(COLOURS.multiOccBorder);
       break;
     case 'ext':
       cell.fill   = hexFill(COLOURS.extBg);
@@ -219,14 +249,33 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
 
     for (let d = 1; d <= days; d++) {
       const date    = new Date(year, month, d);
-      const booking = DB.bookings.find(b =>
+      const dateStr = fmtDate(date);
+
+      // Find ALL bookings active on this day for this room
+      const dayBookings = DB.bookings.filter(b =>
         b.hotel === hotelKey && b.room === roomNum && isInRange(date, b.checkin, b.checkout)
       );
 
       const col  = d + 2;
       const cell = row.getCell(col);
 
-      if (booking) {
+      if (dayBookings.length === 0) {
+        if (roomDef.status === 'maintenance') {
+          cell.value = 'MAINT';
+          applyCellStyle(cell, 'maint', isAlt);
+        } else {
+          cell.value = '';
+          applyCellStyle(cell, 'vacant', isAlt);
+        }
+        continue;
+      }
+
+      // Build cell text — handle multi-guest with line breaks
+      const isMulti = dayBookings.length > 1;
+      let cellType  = 'occupied';
+      let lines     = [];
+
+      dayBookings.forEach((booking, bi) => {
         const src  = SRC_CODE[booking.source] || booking.source;
         const name = booking.guest.toUpperCase();
         let txt    = `${src} - ${roomNum} ${name}`;
@@ -244,28 +293,48 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
               const thisEnd = parseDate(exts[ei].checkout);
               if (d0 > prevEnd && d0 <= thisEnd) {
                 txt += ei % 2 === 0 ? ' [EXT]' : ' [EXT2]';
+                if (bi === 0) cellType = ei % 2 === 0 ? 'ext' : 'ext2';
                 break;
               }
             }
           }
         }
 
-        cell.value = txt;
-        applyCellStyle(cell, getCellType(txt), isAlt);
-        totalNights++;
+        // Detect paid status for this booking on this date
+        const payStatus = (function() {
+          const paid = (booking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+          const due  = (function(){
+            const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
+            const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
+            const n=Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
+            return paid>0&&br===0?paid:applyDiscount((br+ar)*n,booking);
+          })();
+          if(paid<=0) return 'none';
+          return paid>=due?'full':'partial';
+        })();
 
-        const baseRate = (DB.prices[roomDef.type] || {})[booking.source] || 0;
-        const addon    = (booking.extraHead||0)*(DB.addons.extraHead||0)
-                       + (booking.extraBed||0)*(DB.addons.extraBed||0);
-        totalIncome += baseRate + addon;
+        if(bi===0){
+          if(payStatus==='full')    { txt+=' [PAID]';    cellType='paid';    }
+          else if(payStatus==='partial'){ txt+=' [PART]'; cellType='partial'; }
+        }
 
-      } else if (roomDef.status === 'maintenance') {
-        cell.value = 'MAINT';
-        applyCellStyle(cell, 'maint', isAlt);
-      } else {
-        cell.value = '';
-        applyCellStyle(cell, 'vacant', isAlt);
-      }
+        lines.push(txt);
+      });
+
+      // Multi-guest overrides colour (unless paid)
+      if (isMulti && cellType === 'occupied') cellType = 'multi';
+      if (isMulti) lines[0] += ' [2G]'; // tag first line for type detection
+
+      cell.value = lines.join('\n');
+      applyCellStyle(cell, cellType, isAlt);
+
+      // Count nights and income for first booking only (to avoid double-counting)
+      const booking = dayBookings[0];
+      totalNights++;
+      const baseRate = (DB.prices[roomDef.type] || {})[booking.source] || 0;
+      const addon    = (booking.extraHead||0)*(DB.addons.extraHead||0)
+                     + (booking.extraBed||0)*(DB.addons.extraBed||0);
+      totalIncome += baseRate + addon;
     }
 
     // Totals columns
@@ -519,7 +588,13 @@ async function importFromExcel(file) {
 
       for (const [colStr, day] of Object.entries(dateColMap)) {
         const col     = parseInt(colStr);
-        const cellVal = String(row[col] || '').trim().replace(/\s*\[EXT2?\]\s*/gi, '').trim();
+        const cellVal = String(row[col] || '').trim()
+          .replace(/\s*\[EXT2?\]\s*/gi, '')
+          .replace(/\s*\[PAID\]\s*/gi, '')
+          .replace(/\s*\[PART\]\s*/gi, '')
+          .replace(/\s*\[2G\]\s*/gi, '')
+          .split('\n')[0]
+          .trim();
         if (!cellVal || cellVal === 'MAINT') continue;
 
         const { source, guest, extraHead, extraBed } = parseCellValue(cellVal);

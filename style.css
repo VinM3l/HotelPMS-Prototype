@@ -1321,3 +1321,80 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   border-color: var(--border2);
 }
 .action-edit:hover { background: var(--surface); }
+
+/* ─── PAYMENT TRACKER ────────────────────────────────────────────────────────── */
+.payment-tracker {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.payment-tracker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.payment-summary {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.payment-summary.full    { background: var(--green-light); color: var(--green-text); border: 1px solid var(--green-border); }
+.payment-summary.partial { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.payment-summary.none    { background: var(--surface2); color: var(--text3); border: 1px solid var(--border2); }
+
+.payment-history { margin-bottom: 10px; }
+.payment-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12px;
+}
+.payment-entry:last-child { border-bottom: none; }
+.payment-date   { color: var(--text3); flex-shrink: 0; font-size: 11px; min-width: 60px; }
+.payment-note   { flex: 1; color: var(--text2); }
+.payment-amount { font-weight: 700; color: var(--green-text); flex-shrink: 0; }
+
+.payment-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.payment-amount-input { max-width: 120px; }
+
+/* ─── CARD PAYMENT STATUS CLASSES ────────────────────────────────────────────── */
+.room-card.balance-full {
+  background: #c6edd5 !important;
+  border-color: #7dc4a0 !important;
+}
+.room-card.balance-full::before    { background: #16a34a !important; }
+.room-card.balance-full .room-num  { color: #0d3d22 !important; }
+.room-card.balance-full .room-guest{ color: #0a2e19 !important; }
+
+.room-card.balance-partial {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+}
+.room-card.balance-partial::before       { background: #2563eb !important; }
+.room-card.balance-partial .room-num     { color: #1e3a8a !important; }
+.room-card.balance-partial .room-guest   { color: #1e3a8a !important; }
+.room-card.balance-partial .room-type-label { color: #3b5ec6 !important; }
+
+/* Partial payment badge */
+.partial-badge {
+  font-size: 9px;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}

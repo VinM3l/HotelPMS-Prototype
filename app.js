@@ -106,12 +106,17 @@ DB.bookings.forEach(b => {
   if (b.discountValue   === undefined) b.discountValue   = 0;
   if (b.discountNote    === undefined) b.discountNote    = '';
   if (b.extensions      === undefined) b.extensions      = [];
-  // migrate old balancePaid boolean → balancePaidDate
-  if (b.balancePaid === true && !b.balancePaidDate) {
-    b.balancePaidDate = fmtDate(new Date()); // treat as paid today
-  }
+  // migrate old payment fields → payments array
   if (b.balancePaid !== undefined) delete b.balancePaid;
-  if (b.balancePaidDate === undefined) b.balancePaidDate = null;
+  if (b.balancePaidDate !== undefined) {
+    // convert old single date to payments array entry
+    if (b.balancePaidDate) {
+      if (!b.payments) b.payments = [];
+      if (!b.payments.length) b.payments.push({ amount: 0, date: b.balancePaidDate, note: 'Migrated' });
+    }
+    delete b.balancePaidDate;
+  }
+  if (b.payments === undefined) b.payments = [];
 });
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -234,6 +239,45 @@ function bookingDiscountAmount(b) {
   return gross - applyDiscount(gross, b);
 }
 
+// ─── PAYMENT HELPERS ──────────────────────────────────────────────────────────
+/** Total amount due for a booking (after discount). */
+function bookingTotalDue(b) {
+  const roomDef = DB.hotels[b.hotel]?.rooms[b.room];
+  if (!roomDef) return 0;
+  const ci = parseDate(b.checkin), co = parseDate(b.checkout);
+  const nights = Math.round((co - ci) / 864e5) + 1;
+  const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
+  const addonRate = (b.extraHead||0)*(DB.addons.extraHead||0)
+                  + (b.extraBed||0)*(DB.addons.extraBed||0);
+  return applyDiscount((baseRate + addonRate) * nights, b);
+}
+
+/** Total amount paid so far across all payment entries. */
+function bookingAmountPaid(b) {
+  return (b.payments||[]).reduce((s,p) => s + (parseFloat(p.amount)||0), 0);
+}
+
+/**
+ * Payment status for a booking:
+ *   'none'    — no payments recorded
+ *   'partial' — some paid, not full
+ *   'full'    — paid in full or overpaid
+ */
+function bookingPaymentStatus(b) {
+  const paid  = bookingAmountPaid(b);
+  const due   = bookingTotalDue(b);
+  if (paid <= 0)          return 'none';
+  if (paid >= due)        return 'full';
+  return 'partial';
+}
+
+/** Last payment date string or null. */
+function bookingLastPaymentDate(b) {
+  const pmts = b.payments||[];
+  if (!pmts.length) return null;
+  return pmts[pmts.length-1].date;
+}
+
 /**
  * Total income for the current hotel across a date range.
  */
@@ -266,17 +310,32 @@ function toggleDepositUI(id,val) {
   toast(val?'🔑 Key deposit marked as paid':'Key deposit cleared');
 }
 
-function toggleBalanceUI(id, val) {
+function addPayment(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  b.balancePaidDate = val ? fmtDate(currentDate) : null;
+  const amtEl =document.getElementById(`pmt-amt-${id}`);
+  const noteEl=document.getElementById(`pmt-note-${id}`);
+  const amt   =parseFloat(amtEl?.value)||0;
+  if(amt<=0){ toast('Enter an amount greater than 0'); amtEl?.focus(); return; }
+  const note=noteEl?.value.trim()||'Payment';
+  if(!b.payments) b.payments=[];
+  b.payments.push({ amount:amt, date:fmtDate(currentDate), note });
   saveState();
-  if(activeRoom) {
-    const todayBooking=getBookingOnDate(currentHotel,activeRoom,currentDate);
-    if(todayBooking) renderRoomGuest(); else renderRoomCalendar();
-  }
+  renderRoomGuest();
   renderDashboard();
   if(currentPage==='bookings') renderBookingsPage();
-  toast(val?`💰 Balance paid — marked for ${dateStr(currentDate)}`:'Balance marked as unsettled');
+  const status=bookingPaymentStatus(b);
+  toast(status==='full'?`✅ ${peso(amt)} added — balance fully settled!`:`💰 ${peso(amt)} recorded — ${peso(Math.max(0,bookingTotalDue(b)-bookingAmountPaid(b)))} remaining`);
+}
+
+function removePayment(id, idx) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b||!b.payments) return;
+  if(!confirm(`Remove payment of ${peso(b.payments[idx]?.amount)}?`)) return;
+  b.payments.splice(idx,1);
+  saveState();
+  renderRoomGuest();
+  renderDashboard();
+  if(currentPage==='bookings') renderBookingsPage();
+  toast('Payment entry removed');
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
@@ -382,11 +441,15 @@ function renderDashboard() {
       const isCheckin=booking&&fmtDate(currentDate)===booking.checkin;
       const depositPaid=booking?hasKeyDeposit(booking.id):false;
       const isExtended=status==='extended'||status==='extended-alt';
+      const payStatus=booking?bookingPaymentStatus(booking):'none';
+      const amtPaid=booking?bookingAmountPaid(booking):0;
+      const amtDue=booking?bookingTotalDue(booking):0;
+      const balance=amtDue-amtPaid;
 
-      // Blue ONLY on the specific date payment was made
-      const paidDate=booking?.balancePaidDate||null;
-      const isPaidToday=paidDate&&paidDate===fmtDate(currentDate);
-      const cardClass=isPaidToday?'balance-paid':(isExtended?status:'');
+      // Card colour: full=green(same), partial=blue, none=normal green/extended
+      const cardClass=payStatus==='partial'?'balance-partial'
+                     :payStatus==='full'?'balance-full'
+                     :(isExtended?status:'');
 
       // Check for a second booking overlapping today (two guests same room same day)
       const allTodayBookings=DB.bookings.filter(b=>
@@ -420,8 +483,9 @@ function renderDashboard() {
             <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">
               ${isCheckin&&!isCheckout?'<span class="checkin-badge">Check-in</span>':''}
               ${isCheckout?'<span class="checkout-badge">Checkout</span>':''}
-              ${isExtended&&!isPaidToday?'<span class="extended-badge">Extended</span>':''}
-              ${isPaidToday?'<span class="paid-badge">Paid ✓</span>':''}
+              ${isExtended&&payStatus==='none'?'<span class="extended-badge">Extended</span>':''}
+              ${payStatus==='full'?'<span class="paid-badge">Paid ✓</span>':''}
+              ${payStatus==='partial'?`<span class="partial-badge">₱${Math.round(balance).toLocaleString()} left</span>`:''}
               ${!depositPaid?'<span class="no-deposit-badge">No deposit</span>':''}
             </div>
           </div>`;
@@ -517,16 +581,13 @@ function renderRoomGuest() {
   let html='';
   todayBookings.forEach((b,idx)=>{
     const paid        = hasKeyDeposit(b.id);
-    const paidDate    = b.balancePaidDate||null;
-    const isPaidToday = paidDate&&paidDate===fmtDate(currentDate);
+    const payStatus   = bookingPaymentStatus(b);
+    const amtPaid     = bookingAmountPaid(b);
+    const amtDue      = bookingTotalDue(b);
+    const balance     = Math.max(0, amtDue - amtPaid);
     const isCheckin   = fmtDate(currentDate)===b.checkin;
     const isCheckout  = fmtDate(currentDate)===b.checkout;
     const nights      = Math.round((parseDate(b.checkout)-parseDate(b.checkin))/864e5)+1;
-    const roomDef     = DB.hotels[h].rooms[room];
-    const baseRate    = (DB.prices[roomDef?.type]||{})[b.source]||0;
-    const addon       = (b.extraHead||0)*(DB.addons.extraHead||0)+(b.extraBed||0)*(DB.addons.extraBed||0);
-    const gross       = (baseRate+addon)*nights;
-    const total       = applyDiscount(gross,b);
     const exts        = b.extensions||[];
     const isExtended  = exts.length>0;
 
@@ -549,7 +610,7 @@ function renderRoomGuest() {
         <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-in</div><div class="guest-panel-stat-val">${shortDate(b.checkin)}</div></div>
         <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-out</div><div class="guest-panel-stat-val">${shortDate(b.checkout)}</div></div>
         <div class="guest-panel-stat"><div class="guest-panel-stat-label">Nights</div><div class="guest-panel-stat-val">${nights}</div></div>
-        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Total</div><div class="guest-panel-stat-val" style="color:var(--green-text)">${peso(total)}</div></div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Total due</div><div class="guest-panel-stat-val" style="color:var(--green-text)">${peso(amtDue)}</div></div>
       </div>
 
       ${b.extraHead>0||b.extraBed>0?`
@@ -563,14 +624,43 @@ function renderRoomGuest() {
         ${b.discountNote?` — "${b.discountNote}"`:''}
       </div>`:''}
 
-      <div class="guest-panel-actions">
+      <!-- Payment tracker -->
+      <div class="payment-tracker">
+        <div class="payment-tracker-header">
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text2)">💰 Payments</span>
+          <div class="payment-summary ${payStatus}">
+            ${payStatus==='full'?'Paid in full ✓'
+             :payStatus==='partial'?`${peso(amtPaid)} paid · ${peso(balance)} remaining`
+             :'No payment recorded'}
+          </div>
+        </div>
+
+        ${(b.payments||[]).length>0?`
+        <div class="payment-history">
+          ${(b.payments||[]).map((p,pi)=>`
+            <div class="payment-entry">
+              <span class="payment-date">${shortDate(p.date)}</span>
+              <span class="payment-note">${p.note||'Payment'}</span>
+              <span class="payment-amount">${peso(p.amount)}</span>
+              <button class="booking-del" onclick="removePayment('${b.id}',${pi})" title="Remove">✕</button>
+            </div>`).join('')}
+        </div>`:''}
+
+        <div class="payment-add-row" id="payment-add-${b.id}">
+          <input class="form-input payment-amount-input" type="number" min="0" step="50"
+                 placeholder="${peso(balance||amtDue)}" id="pmt-amt-${b.id}"
+                 style="flex:1;min-width:0">
+          <input class="form-input" type="text" placeholder="Note (optional)"
+                 id="pmt-note-${b.id}" style="flex:2;min-width:0">
+          <button class="btn btn-primary" style="flex-shrink:0;font-size:12px;padding:7px 12px"
+                  onclick="addPayment('${b.id}')">Add</button>
+        </div>
+      </div>
+
+      <div class="guest-panel-actions" style="margin-top:10px">
         <button class="guest-action-btn ${paid?'action-active-green':'action-inactive'}"
                 onclick="toggleDepositUI('${b.id}',${!paid})">
           🔑 ${paid?'Deposit paid':'Mark deposit paid'}
-        </button>
-        <button class="guest-action-btn ${paidDate?'action-active-blue':'action-inactive'}"
-                onclick="toggleBalanceUI('${b.id}',${!paidDate})">
-          💰 ${paidDate?'Balance settled · '+shortDate(paidDate):'Mark balance paid'}
         </button>
         <button class="guest-action-btn action-yellow"
                 onclick="closeModal('roomModal');openExtendStay('${b.id}')">
@@ -654,10 +744,10 @@ function renderRoomCalendar() {
               onclick="event.stopPropagation();toggleDepositUI('${b.id}',${!paid})">
         🔑 ${paid?'Paid':'No deposit'}
       </button>
-      <button class="key-deposit-toggle ${b.balancePaid?'balance-paid-btn':'balance-unpaid-btn'}"
-              onclick="event.stopPropagation();toggleBalanceUI('${b.id}',${!b.balancePaid})">
-        💰 ${b.balancePaid?'Settled':'Unsettled'}
-      </button>
+      <span class="key-deposit-toggle ${bookingPaymentStatus(b)==='full'?'deposit-paid':bookingPaymentStatus(b)==='partial'?'balance-paid-btn':'balance-unpaid-btn'}"
+            style="cursor:default">
+        💰 ${bookingPaymentStatus(b)==='full'?'Settled':bookingPaymentStatus(b)==='partial'?peso(bookingAmountPaid(b))+' paid':'Unpaid'}
+      </span>
       <button class="booking-del" onclick="editBooking('${b.id}')">&#9998;</button>
       <button class="booking-del" onclick="deleteBooking('${b.id}')">&#x2715;</button>
     </div>`;
@@ -801,7 +891,6 @@ function buildBookingForm(b, preRoom) {
   const discNote       = b ? (b.discountNote  || '')     : '';
   const notesVal       = b ? (b.notes || '')  : '';
   const depositPaid    = b ? hasKeyDeposit(b.id) : false;
-  const balancePaidVal = b ? (b.balancePaidDate || null) : null;
   const addons         = DB.addons;
 
   const roomOpts = sortRoomKeys(Object.keys(DB.hotels[h].rooms))
@@ -906,14 +995,18 @@ function buildBookingForm(b, preRoom) {
     </div>
 
     <div class="form-group full" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px">
-      <label class="form-label" style="color:#1d4ed8">💰 Balance / Payment</label>
-      <div class="deposit-row" style="margin-top:8px">
-        <label class="deposit-check-label">
-          <input type="checkbox" id="bf-balancePaid" ${balancePaidVal?'checked':''}>
-          <span>Balance has been paid in full ${balancePaidVal?`<span style="font-size:10px;color:var(--text3)">(paid ${shortDate(balancePaidVal)})</span>`:''}</span>
-        </label>
-        <span class="deposit-hint">Records today's date as the payment date — turns the room blue on that day</span>
-      </div>
+      <label class="form-label" style="color:#1d4ed8">💰 Payment status</label>
+      ${b?(()=>{
+        const paid=bookingAmountPaid(b), due=bookingTotalDue(b), status=bookingPaymentStatus(b);
+        const pmts=(b.payments||[]);
+        return `<div style="margin-top:6px;font-size:12px;color:var(--text2)">
+          ${status==='full'?`<span style="color:var(--green-text);font-weight:700">✓ Paid in full — ${peso(paid)}</span>`
+           :status==='partial'?`<span style="color:#1e40af;font-weight:700">${peso(paid)} paid of ${peso(due)} — ${peso(due-paid)} remaining</span>`
+           :'<span style="color:var(--text3)">No payments recorded yet</span>'}
+          ${pmts.length?`<div style="margin-top:6px;font-size:11px;color:var(--text3)">${pmts.map(p=>`${shortDate(p.date)}: ${peso(p.amount)}${p.note?' ('+p.note+')':''}`).join(' · ')}</div>`:''}
+          <div style="margin-top:6px;font-size:11px;color:var(--text3)">Use the room's Guest tab to add or remove payments.</div>
+        </div>`;
+      })():`<div style="margin-top:6px;font-size:12px;color:var(--text3)">Save the booking first, then use the room's Guest tab to record payments.</div>`}
     </div>
 
     <div class="form-group full">
@@ -990,10 +1083,6 @@ function saveBooking() {
   const source  =document.getElementById('bf-source').value;
   const notes   =document.getElementById('bf-notes').value;
   const deposit      =document.getElementById('bf-deposit').checked;
-  const balancePaid  =document.getElementById('bf-balancePaid')?.checked||false;
-  const balancePaidDate = balancePaid
-    ? (editingBookingId && DB.bookings.find(b=>b.id===editingBookingId)?.balancePaidDate) || fmtDate(new Date())
-    : null;
   const extraHead    =parseInt(document.getElementById('bf-extraHead').value)||0;
   const extraBed     =parseInt(document.getElementById('bf-extraBed').value)||0;
   const discountType =document.getElementById('bf-discountType').value;
@@ -1008,11 +1097,11 @@ function saveBooking() {
   let bookingId;
   if(editingBookingId){
     const i=DB.bookings.findIndex(b=>b.id===editingBookingId);
-    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaidDate};
+    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote};
     bookingId=editingBookingId; toast('Booking updated');
   } else {
     bookingId=genId();
-    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,balancePaidDate,extensions:[]});
+    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote,payments:[],extensions:[]});
     toast('Booking added');
   }
   DB.keyDeposits[bookingId]=deposit;
@@ -1107,6 +1196,10 @@ function renderBookingsPage() {
     if(b.extraHead>0) extras.push(`+${b.extraHead} head`);
     if(b.extraBed>0)  extras.push(`+${b.extraBed} bed`);
     const discLabel=hasDisc?(b.discountType==='percent'?`${b.discountValue}% off`:peso(b.discountValue)+' off'):'';
+    const payStatus=bookingPaymentStatus(b);
+    const amtPaid=bookingAmountPaid(b);
+    const payLabel=payStatus==='full'?'Settled ✓':payStatus==='partial'?`${peso(amtPaid)} paid`:'Unpaid';
+    const payClass=payStatus==='full'?'deposit-paid':payStatus==='partial'?'balance-paid-btn':'balance-unpaid-btn';
     html+=`<div class="booking-item" onclick="editBooking('${b.id}')">
       <span class="src-badge src-${b.source}">${srcLabel(b.source)}</span>
       <div style="flex:1;min-width:0">
@@ -1122,10 +1215,7 @@ function renderBookingsPage() {
         </div>
         ${b.discountNote?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">"${b.discountNote}"</div>`:''}
       </div>
-      <button class="key-deposit-toggle ${paid?'deposit-paid':'deposit-missing'}"
-              onclick="event.stopPropagation();toggleDepositUI('${b.id}',${!paid})">
-        🔑 ${paid?'Paid':'No deposit'}
-      </button>
+      <span class="key-deposit-toggle ${payClass}" style="cursor:default;flex-shrink:0">💰 ${payLabel}</span>
       <button class="booking-del" onclick="event.stopPropagation();deleteBooking('${b.id}')">&#x2715;</button>
     </div>`;
   });
