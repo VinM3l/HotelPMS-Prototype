@@ -22,45 +22,41 @@ const loadSheetJS = () => loadScript(SHEETJS_CDN, 'XLSX');
 
 // ─── COLOUR PALETTE (matches dashboard CSS exactly) ──────────────────────────
 const COLOURS = {
-  // Header
-  headerBg:    '1A7A4A',
-  headerFg:    'FFFFFF',
-  titleFg:     '1A7A4A',
-  // Occupied: darker pastel green
-  occBg:       'C6EDD5',
-  occFg:       '145C38',
-  occBorder:   '7DC4A0',
+  headerBg:     '1A7A4A', headerFg: 'FFFFFF', titleFg: '1A7A4A',
+
+  // Occupied normal — darker pastel green (matches .room-card.occupied)
+  occBg:        'C6EDD5', occFg: '145C38', occBorder: '7DC4A0',
+
+  // Occupied fully paid — same darker green, bold to distinguish
+  occFullBg:    'A8D5B8', occFullFg: '0D3D22', occFullBorder: '5AAF84',
+
+  // Occupied partial payment — pastel blue (matches .room-card.balance-partial)
+  occPartialBg: 'DBEAFE', occPartialFg: '1E3A8A', occPartialBorder: '93C5FD',
+
+  // Multi-guest normal
+  multiOccBg:   'B8E8CC', multiOccFg: '0D3D22', multiOccBorder: '5AAF84',
+
+  // Multi-guest full paid
+  multiFullBg:  'A0D4B4', multiFullFg: '0A2E19', multiFullBorder: '4A9E72',
+
+  // Multi-guest partial
+  multiPartialBg: 'BFDBFE', multiPartialFg: '1E3A8A', multiPartialBorder: '60A5FA',
+
   // Extended #1: yellow
-  extBg:       'FEF9C3',
-  extFg:       '713F12',
-  extBorder:   'FDE047',
+  extBg:        'FEF9C3', extFg: '713F12', extBorder: 'FDE047',
+
   // Extended #2 alt: deeper green
-  ext2Bg:      'DCFCE7',
-  ext2Fg:      '14532D',
-  ext2Border:  '86EFAC',
+  ext2Bg:       'DCFCE7', ext2Fg: '14532D', ext2Border: '86EFAC',
+
   // Maintenance: light grey
-  maintBg:     'F3F4F6',
-  maintFg:     '4B5563',
+  maintBg:      'F3F4F6', maintFg: '4B5563',
+
   // Vacant: white
-  vacantBg:    'FFFFFF',
-  vacantFg:    '9CA3AF',
-  // Balance paid: blue
-  paidBg:      '93C5FD',
-  paidFg:      '1E3A8A',
-  paidBorder:  '3B82F6',
-  // Partial payment: light blue-purple
-  partialBg:   'BFDBFE',
-  partialFg:   '1E3A8A',
-  partialBorder:'60A5FA',
-  // Multi-guest: slightly warmer tint to distinguish
-  multiOccBg:  'B8E8CC',
-  multiOccFg:  '0D3D22',
-  multiOccBorder: '5AAF84',
-  // Alternating row tint
-  altBg:       'F9FAFB',
-  // Summary / totals
-  totalsBg:    'EDF7F0',
-  notesBg:     'F0F9F5',
+  vacantBg:     'FFFFFF', vacantFg: '9CA3AF',
+
+  altBg:        'F9FAFB',
+  totalsBg:     'EDF7F0',
+  notesBg:      'F0F9F5',
 };
 
 // ─── DATE / PERIOD HELPERS ────────────────────────────────────────────────────
@@ -127,26 +123,41 @@ function applyTitleStyle(cell) {
 function applyCellStyle(cell, type, isAltRow) {
   const rowBg = isAltRow ? COLOURS.altBg : COLOURS.vacantBg;
   switch (type) {
+    // ── Normal occupied (no payment) — darker pastel green ──
     case 'occupied':
       cell.fill   = hexFill(COLOURS.occBg);
       cell.font   = hexFont(COLOURS.occFg, { size: 9 });
       cell.border = thinBorder(COLOURS.occBorder);
       break;
-    case 'paid':
-      cell.fill   = hexFill(COLOURS.paidBg);
-      cell.font   = hexFont(COLOURS.paidFg, { bold: true, size: 9 });
-      cell.border = thinBorder(COLOURS.paidBorder);
+    // ── Fully paid — even darker green, bold ──
+    case 'occ-full':
+      cell.fill   = hexFill(COLOURS.occFullBg);
+      cell.font   = hexFont(COLOURS.occFullFg, { bold: true, size: 9 });
+      cell.border = thinBorder(COLOURS.occFullBorder);
       break;
-    case 'partial':
-      cell.fill   = hexFill(COLOURS.partialBg);
-      cell.font   = hexFont(COLOURS.partialFg, { size: 9 });
-      cell.border = thinBorder(COLOURS.partialBorder);
+    // ── Partial payment — pastel blue ──
+    case 'occ-partial':
+      cell.fill   = hexFill(COLOURS.occPartialBg);
+      cell.font   = hexFont(COLOURS.occPartialFg, { size: 9 });
+      cell.border = thinBorder(COLOURS.occPartialBorder);
       break;
+    // ── Multi-guest variants ──
     case 'multi':
       cell.fill   = hexFill(COLOURS.multiOccBg);
       cell.font   = hexFont(COLOURS.multiOccFg, { size: 8 });
       cell.border = thinBorder(COLOURS.multiOccBorder);
       break;
+    case 'multi-full':
+      cell.fill   = hexFill(COLOURS.multiFullBg);
+      cell.font   = hexFont(COLOURS.multiFullFg, { bold: true, size: 8 });
+      cell.border = thinBorder(COLOURS.multiFullBorder);
+      break;
+    case 'multi-partial':
+      cell.fill   = hexFill(COLOURS.multiPartialBg);
+      cell.font   = hexFont(COLOURS.multiPartialFg, { size: 8 });
+      cell.border = thinBorder(COLOURS.multiPartialBorder);
+      break;
+    // ── Extensions ──
     case 'ext':
       cell.fill   = hexFill(COLOURS.extBg);
       cell.font   = hexFont(COLOURS.extFg, { bold: true, size: 9 });
@@ -157,12 +168,14 @@ function applyCellStyle(cell, type, isAltRow) {
       cell.font   = hexFont(COLOURS.ext2Fg, { bold: true, size: 9 });
       cell.border = thinBorder(COLOURS.ext2Border);
       break;
+    // ── Maintenance ──
     case 'maint':
       cell.fill   = hexFill(COLOURS.maintBg);
       cell.font   = hexFont(COLOURS.maintFg, { italic: true, size: 9 });
       cell.border = thinBorder('D1D5DB');
       break;
-    default: // vacant
+    // ── Vacant ──
+    default:
       cell.fill   = hexFill(rowBg);
       cell.font   = hexFont(COLOURS.vacantFg, { size: 9 });
       cell.border = thinBorder('E5E7EB');
@@ -272,8 +285,21 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
 
       // Build cell text — handle multi-guest with line breaks
       const isMulti = dayBookings.length > 1;
-      let cellType  = 'occupied';
-      let lines     = [];
+
+      // Compute payment status for the PRIMARY booking (first one)
+      const primaryBooking = dayBookings[0];
+      const pmtPaid = (primaryBooking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+      const pmtDue  = (()=>{
+        const br = (DB.prices[roomDef.type]||{})[primaryBooking.source]||0;
+        const ar = (primaryBooking.extraHead||0)*(DB.addons.extraHead||0)
+                 + (primaryBooking.extraBed||0)*(DB.addons.extraBed||0);
+        const n  = Math.round((parseDate(primaryBooking.checkout)-parseDate(primaryBooking.checkin))/864e5)+1;
+        return applyDiscount((br+ar)*n, primaryBooking);
+      })();
+      const payStatus = pmtPaid<=0?'none':pmtPaid>=pmtDue?'full':'partial';
+
+      let cellType = 'occupied'; // default
+      let lines    = [];
 
       dayBookings.forEach((booking, bi) => {
         const src  = SRC_CODE[booking.source] || booking.source;
@@ -300,30 +326,18 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
           }
         }
 
-        // Detect paid status for this booking on this date
-        const payStatus = (function() {
-          const paid = (booking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-          const due  = (function(){
-            const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
-            const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
-            const n=Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
-            return paid>0&&br===0?paid:applyDiscount((br+ar)*n,booking);
-          })();
-          if(paid<=0) return 'none';
-          return paid>=due?'full':'partial';
-        })();
-
-        if(bi===0){
-          if(payStatus==='full')    { txt+=' [PAID]';    cellType='paid';    }
-          else if(payStatus==='partial'){ txt+=' [PART]'; cellType='partial'; }
-        }
-
         lines.push(txt);
       });
 
-      // Multi-guest overrides colour (unless paid)
-      if (isMulti && cellType === 'occupied') cellType = 'multi';
-      if (isMulti) lines[0] += ' [2G]'; // tag first line for type detection
+      // Apply payment status colour ONLY if not already coloured by extension
+      // Matches dashboard: full=darker green, partial=blue, none=normal green
+      if (cellType === 'occupied' || cellType === 'multi') {
+        if      (payStatus === 'full')    cellType = isMulti ? 'multi-full'    : 'occ-full';
+        else if (payStatus === 'partial') cellType = isMulti ? 'multi-partial' : 'occ-partial';
+        else if (isMulti)                 cellType = 'multi';
+      }
+
+      if (isMulti) lines[0] += ' [2G]';
 
       cell.value = lines.join('\n');
       applyCellStyle(cell, cellType, isAlt);
@@ -344,7 +358,19 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
       return ci <= mEnd && co >= mStart;
     });
     const depositAll = monthBookings.length > 0 && monthBookings.every(b => hasKeyDeposit(b.id));
-    const noteStr    = monthBookings.map(b => b.notes).filter(Boolean).join('; ');
+
+    // Build payment summary for notes column
+    const paymentSummary = monthBookings.map(b => {
+      const paid = (b.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+      const due  = bookingTotalDue ? bookingTotalDue(b) : 0;
+      if (paid <= 0) return null;
+      return `${b.guest.split(' ')[0]}: ${paid>=due?'PAID IN FULL':'PARTIAL ₱'+Math.round(paid).toLocaleString()+'/₱'+Math.round(due).toLocaleString()}`;
+    }).filter(Boolean).join('; ');
+
+    const noteStr = [
+      monthBookings.map(b=>b.notes).filter(Boolean).join('; '),
+      paymentSummary
+    ].filter(Boolean).join(' | ');
 
     const statStyle = { fill: hexFill(COLOURS.notesBg), font: hexFont('374151', { size: 10 }), border: thinBorder('D1D5DB') };
 

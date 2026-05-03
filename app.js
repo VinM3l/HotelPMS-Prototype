@@ -663,7 +663,7 @@ function renderRoomGuest() {
           🔑 ${paid?'Deposit paid':'Mark deposit paid'}
         </button>
         <button class="guest-action-btn action-yellow"
-                onclick="closeModal('roomModal');openExtendStay('${b.id}')">
+                onclick="openExtendStay('${b.id}')">
           ⟳ Extend stay
         </button>
         <button class="guest-action-btn action-edit"
@@ -814,53 +814,84 @@ function editBooking(id) {
     <button class="btn btn-ghost"  onclick="closeModal('bookingModal')">Cancel</button>
     <button class="btn ${extClass}" onclick="openExtendStay('${id}')">⟳ ${extLabel}</button>
     <button class="btn btn-primary" onclick="saveBooking()">Save Changes</button>`;
-  document.getElementById('bookingModal').style.display='flex';
 }
 
 function openExtendStay(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  const currentCheckout = b.checkout;
-  const exts = b.extensions||[];
+  const exts   = b.extensions||[];
   const extNum = exts.length+1;
+  const colour = extNum%2!==0 ? '#713f12' : '#14532d';
+  const emoji  = extNum%2!==0 ? '🟡' : '🟢';
+  const colourBg = extNum%2!==0 ? '#fefce8' : '#dcfce7';
+  const colourBorder = extNum%2!==0 ? '#fde047' : '#86efac';
 
-  // Insert a mini extend panel into the modal body above the footer
-  const existing=document.getElementById('extendPanel');
-  if(existing) existing.remove();
+  // Close any other open modals first
+  closeModal('bookingModal');
+  closeModal('roomModal');
 
-  const panel=document.createElement('div');
-  panel.id='extendPanel';
-  panel.style.cssText='border-top:1px solid var(--border);padding-top:12px;margin-top:12px';
-  panel.innerHTML=`
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:${extNum%2!==0?'#713f12':'#14532d'};margin-bottom:8px">
-      ${extNum%2!==0?'🟡':'🟢'} Extension #${extNum}
-    </div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
-      Current checkout: <strong>${shortDate(currentCheckout)}</strong>. Set new checkout date:
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input class="form-input" id="extNewCheckout" type="date"
-             min="${currentCheckout}" value="${currentCheckout}"
-             style="flex:1">
-      <button class="btn btn-primary" style="flex-shrink:0" onclick="confirmExtendStay('${id}')">Confirm</button>
-      <button class="btn btn-ghost"   style="flex-shrink:0" onclick="document.getElementById('extendPanel').remove()">Cancel</button>
-    </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px">
-      Extended days will appear ${extNum%2!==0?'yellow':'green'} on the dashboard and calendar.
-    </div>
-  `;
-  document.getElementById('bookingForm').appendChild(panel);
-  document.getElementById('extNewCheckout').focus();
+  // Build or reuse the extend modal
+  let overlay = document.getElementById('extendModal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'extendModal';
+    overlay.className = 'overlay';
+    overlay.style.zIndex = '300';
+    overlay.onclick = e => { if(e.target===overlay) closeModal('extendModal'); };
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" style="color:${colour}">${emoji} Extension #${extNum}</div>
+          <div class="modal-sub">${b.guest} · Room ${b.room}</div>
+        </div>
+        <button class="modal-close" onclick="closeModal('extendModal')">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:${colourBg};border:1px solid ${colourBorder};border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+          <div style="font-size:12px;color:${colour};font-weight:600;margin-bottom:4px">Current checkout</div>
+          <div style="font-size:16px;font-weight:800;color:${colour}">${shortDate(b.checkout)}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">New checkout date</label>
+          <input class="form-input" id="extNewCheckout" type="date"
+                 min="${b.checkout}" value="${b.checkout}" style="font-size:15px;padding:10px">
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:10px">
+          Extended days will appear <strong>${extNum%2!==0?'yellow':'green'}</strong> on the dashboard and calendar.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('extendModal')">Cancel</button>
+        <button class="btn ${extNum%2!==0?'btn-extend-yellow':'btn-extend-green'}"
+                onclick="confirmExtendStay('${id}')">
+          Confirm Extension #${extNum}
+        </button>
+      </div>
+    </div>`;
+
+  overlay.style.display = 'flex';
+  setTimeout(() => document.getElementById('extNewCheckout')?.focus(), 50);
 }
 
 function confirmExtendStay(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  const newCheckout=document.getElementById('extNewCheckout').value;
+  const inp=document.getElementById('extNewCheckout');
+  const newCheckout=inp?.value;
+
   if(!newCheckout||newCheckout<=b.checkout){
-    toast('New checkout must be after current checkout'); return;
+    toast('New checkout must be after current checkout');
+    inp?.focus();
+    return;
   }
 
   if(!b.extensions) b.extensions=[];
-  const originalCheckout=b.extensions.length===0?b.checkout:b.extensions[0].originalCheckout;
+  const originalCheckout=b.extensions.length===0
+    ? b.checkout
+    : b.extensions[0].originalCheckout;
+
   b.extensions.push({
     originalCheckout,
     previousCheckout: b.checkout,
@@ -868,13 +899,14 @@ function confirmExtendStay(id) {
     addedAt: new Date().toISOString(),
     addedBy: currentUser?.username||'unknown',
   });
-  b.checkout=newCheckout; // advance the actual checkout
+  b.checkout=newCheckout;
+
   saveState();
+  closeModal('extendModal');
+  renderAll();
 
   const extNum=b.extensions.length;
-  toast(`✅ Stay extended to ${shortDate(newCheckout)} (Extension #${extNum})`);
-  closeModal('bookingModal');
-  renderAll();
+  toast(`✅ Stay extended to ${shortDate(newCheckout)} — Extension #${extNum}`);
 }
 
 function buildBookingForm(b, preRoom) {
@@ -1413,7 +1445,7 @@ function renderAnalytics() {
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).style.display='none'; }
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal'].forEach(closeModal);
+  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal','extendModal'].forEach(closeModal);
 });
 
 // ─── CHANGE PASSWORD (admin only) ────────────────────────────────────────────
