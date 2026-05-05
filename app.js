@@ -814,6 +814,7 @@ function editBooking(id) {
     <button class="btn btn-ghost"  onclick="closeModal('bookingModal')">Cancel</button>
     <button class="btn ${extClass}" onclick="openExtendStay('${id}')">⟳ ${extLabel}</button>
     <button class="btn btn-primary" onclick="saveBooking()">Save Changes</button>`;
+  document.getElementById('bookingModal').style.display='flex';
 }
 
 function openExtendStay(id) {
@@ -943,6 +944,29 @@ function buildBookingForm(b, preRoom) {
   const discFixSel     = discType === 'fixed'   ? 'selected' : '';
   const depositChecked = depositPaid ? 'checked' : '';
 
+  // Pre-compute payment status HTML (safe for both new and existing bookings)
+  let paymentStatusHtml;
+  if (b) {
+    const pmtPaid   = bookingAmountPaid(b);
+    const pmtDue    = bookingTotalDue(b);
+    const pmtStatus = bookingPaymentStatus(b);
+    const pmts      = b.payments || [];
+    const pmtLines  = pmts.map(p => `${shortDate(p.date)}: ${peso(p.amount)}${p.note ? ' (' + p.note + ')' : ''}`).join(' · ');
+    const pmtRemain = pmtDue - pmtPaid;
+    const statusSpan = pmtStatus === 'full'
+      ? `<span style="color:var(--green-text);font-weight:700">✓ Paid in full — ${peso(pmtPaid)}</span>`
+      : pmtStatus === 'partial'
+      ? `<span style="color:#1e40af;font-weight:700">${peso(pmtPaid)} paid of ${peso(pmtDue)} — ${peso(pmtRemain)} remaining</span>`
+      : `<span style="color:var(--text3)">No payments recorded yet</span>`;
+    paymentStatusHtml = `<div style="margin-top:6px;font-size:12px;color:var(--text2)">
+      ${statusSpan}
+      ${pmts.length ? `<div style="margin-top:6px;font-size:11px;color:var(--text3)">${pmtLines}</div>` : ''}
+      <div style="margin-top:6px;font-size:11px;color:var(--text3)">Use the room's Guest tab to add or remove payments.</div>
+    </div>`;
+  } else {
+    paymentStatusHtml = `<div style="margin-top:6px;font-size:12px;color:var(--text3)">Save the booking first, then use the room's Guest tab to record payments.</div>`;
+  }
+
   document.getElementById('bookingForm').innerHTML = `
     <div class="form-group full">
       <label class="form-label">Guest name</label>
@@ -1028,17 +1052,7 @@ function buildBookingForm(b, preRoom) {
 
     <div class="form-group full" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px">
       <label class="form-label" style="color:#1d4ed8">💰 Payment status</label>
-      ${b?(()=>{
-        const paid=bookingAmountPaid(b), due=bookingTotalDue(b), status=bookingPaymentStatus(b);
-        const pmts=(b.payments||[]);
-        return `<div style="margin-top:6px;font-size:12px;color:var(--text2)">
-          ${status==='full'?`<span style="color:var(--green-text);font-weight:700">✓ Paid in full — ${peso(paid)}</span>`
-           :status==='partial'?`<span style="color:#1e40af;font-weight:700">${peso(paid)} paid of ${peso(due)} — ${peso(due-paid)} remaining</span>`
-           :'<span style="color:var(--text3)">No payments recorded yet</span>'}
-          ${pmts.length?`<div style="margin-top:6px;font-size:11px;color:var(--text3)">${pmts.map(p=>`${shortDate(p.date)}: ${peso(p.amount)}${p.note?' ('+p.note+')':''}`).join(' · ')}</div>`:''}
-          <div style="margin-top:6px;font-size:11px;color:var(--text3)">Use the room's Guest tab to add or remove payments.</div>
-        </div>`;
-      })():`<div style="margin-top:6px;font-size:12px;color:var(--text3)">Save the booking first, then use the room's Guest tab to record payments.</div>`}
+      ${paymentStatusHtml}
     </div>
 
     <div class="form-group full">
@@ -1117,9 +1131,9 @@ function saveBooking() {
   const deposit      =document.getElementById('bf-deposit').checked;
   const extraHead    =parseInt(document.getElementById('bf-extraHead').value)||0;
   const extraBed     =parseInt(document.getElementById('bf-extraBed').value)||0;
-  const discountType =document.getElementById('bf-discountType').value;
-  const discountValue=parseFloat(document.getElementById('bf-discountValue').value)||0;
-  const discountNote =document.getElementById('bf-discountNote').value.trim();
+  const discountType =document.getElementById('bf-discountType')?.value||'none';
+  const discountValue=parseFloat(document.getElementById('bf-discountValue')?.value||0)||0;
+  const discountNote =(document.getElementById('bf-discountNote')?.value||'').trim();
 
   if(!guest)              { toast('Please enter a guest name'); return; }
   if(!checkin||!checkout) { toast('Please set check-in and check-out dates'); return; }
