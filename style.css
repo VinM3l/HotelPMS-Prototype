@@ -361,75 +361,29 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 5px;
+  width: 4px;
   border-radius: var(--radius) 0 0 var(--radius);
 }
+.room-card.occupied::before    { background: var(--blue); }
+.room-card.vacant::before      { background: var(--green); }
+.room-card.maintenance::before { background: var(--amber); }
 
-/* ── Occupied: darker pastel green ── */
-.room-card.occupied {
-  background: #c6edd5;
-  border-color: #7dc4a0;
-}
-.room-card.occupied::before      { background: #16a34a; }
-.room-card.occupied .room-num        { color: #0d3d22; }
-.room-card.occupied .room-type-label { color: #1a5c35; }
-.room-card.occupied .room-guest      { color: #0a2e19; }
-
-/* ── Vacant: white + blue stripe only ── */
-.room-card.vacant {
-  background: #ffffff;
-  border-color: var(--border);
-}
-.room-card.vacant::before            { background: #2563eb; }
-.room-card.vacant .room-num          { color: var(--grey); }
-.room-card.vacant .room-type-label   { color: var(--text3); }
-.room-card.vacant .vacant-label      { color: var(--text2); }
-.room-card.vacant .room-price-tag    { color: var(--text2); }
-
-/* ── Maintenance: light grey + dark stripe ── */
-.room-card.maintenance {
-  background: #f3f4f6;
-  border-color: #d1d5db;
-}
-.room-card.maintenance::before           { background: #1f2937; }
-.room-card.maintenance .room-num         { color: #374151; }
-.room-card.maintenance .room-type-label  { color: #6b7280; }
-.room-card.maintenance .maint-label      { color: #4b5563; }
-
-/* ── Extended stay: yellow ── */
-.room-card.extended {
-  background: #fefce8;
-  border-color: #fde047;
-}
-.room-card.extended::before            { background: #ca8a04; }
-.room-card.extended .room-num          { color: #713f12; }
-.room-card.extended .room-type-label   { color: #92400e; }
-.room-card.extended .room-guest        { color: #451a03; }
-
-/* ── Extended again (alt): back to green, slightly different shade ── */
-.room-card.extended-alt {
-  background: #dcfce7;
-  border-color: #86efac;
-}
-.room-card.extended-alt::before            { background: #15803d; }
-.room-card.extended-alt .room-num          { color: #14532d; }
-.room-card.extended-alt .room-type-label   { color: #166534; }
-.room-card.extended-alt .room-guest        { color: #052e16; }
+.room-card.occupied  { border-left-color: rgba(37,99,235,0.2); }
+.room-card.vacant    { border-left-color: rgba(26,122,74,0.2); }
 
 .room-card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
   transform: translateY(-1px);
-  filter: brightness(0.97);
+  border-color: var(--border2);
 }
 
 .room-num        { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; color: var(--grey); }
 .room-type-label { font-size: 10px; color: var(--text3); margin-top: 1px; }
 .room-guest      { font-size: 11px; color: var(--text); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .room-bottom     { margin-top: auto; padding-top: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px; }
-.room-price-tag  { font-size: 10px; color: var(--blue-text); font-weight: 600; }
-.vacant-label    { font-size: 11px; color: #1d4ed8; margin-top: 6px; font-weight: 600; }
-.maint-label     { font-size: 11px; color: #4b5563; margin-top: 6px; font-weight: 600; }
-.extended-badge  { font-size: 9px; background: #fef9c3; color: #713f12; border: 1px solid #fde047; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+.room-price-tag  { font-size: 10px; color: var(--green-text); font-weight: 600; }
+.vacant-label    { font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
+.maint-label     { font-size: 11px; color: var(--amber-text); margin-top: 6px; font-weight: 600; }
 
 /* ─── SOURCE BADGES ──────────────────────────────────────────────────────────── */
 .src-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.02em; }
@@ -441,39 +395,6 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 
 .checkout-badge   { font-size: 9px; background: var(--red-bg);    color: var(--red-text);   padding: 2px 5px; border-radius: 4px; font-weight: 700; }
 .checkin-badge    { font-size: 9px; background: var(--green-light);color: var(--green-text); padding: 2px 5px; border-radius: 4px; font-weight: 700; }
-
-/* ── Balance paid: blue bg — guest has settled their bill ── */
-.room-card.balance-paid {
-  background: #93c5fd !important;
-  border-color: #3b82f6 !important;
-}
-.room-card.balance-paid::before          { background: #1d4ed8 !important; }
-.room-card.balance-paid .room-num        { color: #1e3a8a !important; }
-.room-card.balance-paid .room-type-label { color: #1e40af !important; }
-.room-card.balance-paid .room-guest      { color: #1e3a8a !important; }
-
-/* Balance toggle buttons */
-.balance-paid-btn {
-  background: #dbeafe !important;
-  color: #1e40af !important;
-  border-color: #93c5fd !important;
-}
-.balance-unpaid-btn {
-  background: var(--surface2) !important;
-  color: var(--text2) !important;
-  border-color: var(--border2) !important;
-}
-
-/* Paid badge on room card */
-.paid-badge {
-  font-size: 9px;
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-weight: 700;
-}
 .no-deposit-badge { font-size: 9px; background: #fff3cd;           color: #856404;            padding: 2px 5px; border-radius: 4px; font-weight: 700; }
 
 /* ─── KEY DEPOSIT ────────────────────────────────────────────────────────────── */
@@ -1096,189 +1017,238 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 }
 .disc-net span:last-child { font-size: 14px !important; }
 
-/* ─── ACCOUNT MANAGEMENT PAGE ────────────────────────────────────────────────── */
-.acct-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.acct-summary { font-size: 14px; font-weight: 700; color: var(--text); }
-.acct-hint    { font-size: 11px; color: var(--text3); margin-top: 4px; max-width: 480px; line-height: 1.5; }
-
-.acct-list { display: flex; flex-direction: column; gap: 10px; }
-
-.acct-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 22px;
+/* ─── MONTH VIEW ─────────────────────────────────────────────────────────────── */
+.mv-controls {
   display: flex;
   align-items: center;
-  gap: 18px;
-  transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
-  position: relative;
-  overflow: hidden;
-}
-.acct-card::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
-  border-radius: var(--radius) 0 0 var(--radius);
-}
-.acct-card.role-admin-card::before { background: var(--green); }
-.acct-card.role-user-card::before  { background: var(--grey2); }
-.acct-card:hover {
-  box-shadow: 0 4px 18px rgba(0,0,0,0.09);
-  border-color: var(--border2);
-  transform: translateY(-1px);
-}
-.acct-inactive {
-  opacity: 0.5;
-  background: var(--surface2);
-}
-.acct-inactive:hover { transform: none; }
-
-.acct-avatar {
-  width: 50px; height: 50px;
-  border-radius: 14px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; font-weight: 800;
-  flex-shrink: 0;
-  color: #fff;
-  letter-spacing: -0.5px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-}
-.acct-avatar.role-admin { background: linear-gradient(135deg, var(--green) 0%, var(--green-mid) 100%); }
-.acct-avatar.role-user  { background: linear-gradient(135deg, var(--grey2) 0%, #4b5563 100%); }
-
-.acct-info { flex: 1; min-width: 0; padding: 2px 0; }
-
-.acct-name {
-  font-size: 15px; font-weight: 700; color: var(--text);
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-bottom: 5px;
-}
-.acct-you-badge {
-  font-size: 9px; font-weight: 800;
-  background: var(--green-light); color: var(--green-text);
-  border: 1px solid var(--green-border);
-  padding: 2px 7px; border-radius: 20px;
-  text-transform: uppercase; letter-spacing: 0.07em;
-}
-.acct-meta {
-  display: flex; align-items: center; gap: 8px;
+  gap: 12px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
 }
-.acct-username {
-  font-size: 12px; color: var(--text3);
-  font-family: 'Courier New', monospace;
-  background: var(--surface2); border: 1px solid var(--border);
-  padding: 1px 7px; border-radius: 4px;
+.mv-nav { display: flex; align-items: center; gap: 8px; }
+.mv-legend {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  margin-left: auto; align-items: center;
 }
-.acct-role-badge {
-  font-size: 10px; font-weight: 700; padding: 3px 9px;
-  border-radius: 20px; letter-spacing: 0.03em;
-}
-.acct-role-badge.role-admin {
-  background: var(--green-light); color: var(--green-text);
-  border: 1px solid var(--green-border);
-}
-.acct-role-badge.role-user  {
-  background: var(--surface2); color: var(--text2);
-  border: 1px solid var(--border2);
-}
-.acct-status {
-  font-size: 10px; font-weight: 700;
-  padding: 3px 9px; border-radius: 20px;
-}
-.status-active {
-  background: var(--green-light); color: var(--green-text);
-  border: 1px solid var(--green-border);
-}
-.status-inactive {
-  background: var(--red-bg); color: var(--red-text);
-  border: 1px solid #fecaca;
-}
-.acct-created {
-  font-size: 10px; color: var(--text3);
+.mv-leg {
   display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text2);
 }
-.acct-created::before { content: '🕐'; font-size: 9px; }
+.mv-dot {
+  width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
+}
 
-.acct-actions {
+.mv-wrap { width: 100%; overflow: auto; }
+.mv-scroll { min-width: 100%; overflow-x: auto; }
+
+.mv-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 100%;
+}
+.mv-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--dark);
+  color: #fff;
+}
+
+/* Room label column */
+.mv-room-col {
+  width: 110px;
+  min-width: 110px;
+  position: sticky;
+  left: 0;
+  z-index: 11;
+  background: var(--dark);
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 10px;
+  text-align: left;
+  border-right: 2px solid var(--green);
+}
+
+/* Day header columns */
+.mv-day-col {
+  width: 38px;
+  min-width: 38px;
+  padding: 4px 2px;
+  text-align: center;
+  font-size: 10px;
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+.mv-day-num  { font-size: 11px; font-weight: 700; line-height: 1; }
+.mv-day-name { font-size: 9px; opacity: 0.6; margin-top: 1px; }
+
+.mv-today-col  { background: rgba(26,122,74,0.35) !important; }
+.mv-weekend-col { background: rgba(255,255,255,0.04); }
+
+/* Room cell (left label) */
+.mv-room-cell {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--surface);
+  border-right: 2px solid var(--green);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 110px;
+  max-width: 110px;
+}
+.mv-room-cell:hover { background: var(--green-light); }
+.mv-room-num  { font-size: 12px; font-weight: 700; color: var(--grey); }
+.mv-room-type { font-size: 9px; color: var(--text3); }
+
+/* Day cells */
+.mv-cell {
+  width: 38px;
+  min-width: 38px;
+  height: 44px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  vertical-align: top;
+  transition: filter 0.1s;
+}
+.mv-cell:hover { filter: brightness(0.92); }
+.mv-cell-inner {
+  width: 100%; height: 100%;
+  padding: 2px 3px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex-shrink: 0;
-  align-items: stretch;
-  min-width: 96px;
+  gap: 1px;
+  overflow: hidden;
+  position: relative;
 }
-.acct-btn {
-  font-size: 12px; font-weight: 600;
-  padding: 7px 14px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border2);
-  background: transparent; color: var(--text2);
-  cursor: pointer; transition: all 0.12s;
-  white-space: nowrap; text-align: center;
-  width: 100%;
+
+/* Today highlight */
+.mv-today-cell { outline: 2px solid var(--green) !important; outline-offset: -2px; }
+
+/* Status colours — matches dashboard cards */
+.mv-vacant       { background: #ffffff; }
+.mv-occupied     { background: #c6edd5; }
+.mv-paid-full    { background: #a8d5b8; }
+.mv-paid-partial { background: #dbeafe; }
+.mv-extended     { background: #fefce8; }
+.mv-extended-alt { background: #dcfce7; }
+.mv-maint        { background: #f3f4f6; background-image: repeating-linear-gradient(
+  45deg, transparent, transparent 4px, rgba(0,0,0,0.04) 4px, rgba(0,0,0,0.04) 8px); }
+
+/* Cell text */
+.mv-guest-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: #0d3d22;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  margin-top: 2px;
 }
-.acct-btn:hover {
-  background: var(--green-light); color: var(--green-text);
-  border-color: var(--green-border);
+.mv-paid-partial .mv-guest-name { color: #1e3a8a; }
+.mv-extended     .mv-guest-name { color: #713f12; }
+.mv-extended-alt .mv-guest-name { color: #14532d; }
+.mv-vacant       .mv-guest-name { display: none; }
+
+.mv-src-tag {
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(0,0,0,0.35);
+  line-height: 1;
 }
-.acct-btn-danger { border-color: #fecaca; color: var(--red-text); background: var(--red-bg); }
-.acct-btn-danger:hover { background: #fecaca; color: var(--red-text); border-color: #fca5a5; }
-.acct-btn-disabled {
-  opacity: 0.3; cursor: not-allowed; pointer-events: none;
+
+/* Check-in / checkout markers (thin coloured line at left/right edge) */
+.mv-checkin-marker {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--green);
+  border-radius: 0 2px 2px 0;
+}
+.mv-checkout-marker {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--red);
+  border-radius: 2px 0 0 2px;
+}
+
+/* Multi-guest dot */
+.mv-multi-dot {
+  position: absolute;
+  bottom: 1px; right: 2px;
+  font-size: 8px;
+  line-height: 1;
 }
 
 /* ─── EXTEND STAY BUTTONS ────────────────────────────────────────────────────── */
 .btn-extend-yellow {
-  background: #fef9c3;
-  color: #713f12;
-  border: 1px solid #fde047;
-  font-weight: 700;
+  background: #fef9c3; color: #713f12;
+  border: 1px solid #fde047; font-weight: 700;
 }
 .btn-extend-yellow:hover { background: #fde047; color: #422006; }
-
 .btn-extend-green {
-  background: #dcfce7;
-  color: #14532d;
-  border: 1px solid #86efac;
-  font-weight: 700;
+  background: #dcfce7; color: #14532d;
+  border: 1px solid #86efac; font-weight: 700;
 }
 .btn-extend-green:hover { background: #86efac; color: #052e16; }
 
-/* ─── MULTI-GUEST CORNER DOT ─────────────────────────────────────────────────── */
+/* ─── CARD PAYMENT STATUS ────────────────────────────────────────────────────── */
+.room-card.balance-full {
+  background: #c6edd5 !important; border-color: #7dc4a0 !important;
+}
+.room-card.balance-full::before    { background: #16a34a !important; }
+.room-card.balance-full .room-num  { color: #0d3d22 !important; }
+.room-card.balance-full .room-guest{ color: #0a2e19 !important; }
+
+.room-card.balance-partial {
+  background: #dbeafe !important; border-color: #93c5fd !important;
+}
+.room-card.balance-partial::before          { background: #2563eb !important; }
+.room-card.balance-partial .room-num        { color: #1e3a8a !important; }
+.room-card.balance-partial .room-guest      { color: #1e3a8a !important; }
+.room-card.balance-partial .room-type-label { color: #3b5ec6 !important; }
+
+.paid-badge {
+  font-size: 9px; background: #dbeafe; color: #1e40af;
+  border: 1px solid #93c5fd; padding: 2px 5px;
+  border-radius: 4px; font-weight: 700;
+}
+.partial-badge {
+  font-size: 9px; background: #dbeafe; color: #1e40af;
+  border: 1px solid #93c5fd; padding: 2px 5px;
+  border-radius: 4px; font-weight: 700;
+}
+.extended-badge {
+  font-size: 9px; background: #fef9c3; color: #713f12;
+  border: 1px solid #fde047; padding: 2px 5px;
+  border-radius: 4px; font-weight: 700;
+}
+
+/* ─── MULTI-GUEST DOT ────────────────────────────────────────────────────────── */
 .multi-guest-dot {
-  position: absolute;
-  top: 8px; left: 8px;
-  font-size: 11px;
-  line-height: 1;
-  z-index: 2;
-  cursor: pointer;
-  transition: transform 0.15s ease;
-  user-select: none;
+  position: absolute; top: 8px; left: 8px;
+  font-size: 11px; line-height: 1; z-index: 2;
+  cursor: pointer; transition: transform 0.15s ease; user-select: none;
 }
 .multi-guest-dot:hover { transform: scale(1.3); }
 
-/* ─── CURRENT GUEST PANEL ────────────────────────────────────────────────────── */
+/* ─── GUEST PANEL ────────────────────────────────────────────────────────────── */
 .guest-panel { padding: 2px 0; }
-
 .guest-panel-head { margin-bottom: 12px; }
 .guest-panel-name {
   font-size: 17px; font-weight: 800; color: var(--text);
   letter-spacing: -0.3px; margin-bottom: 5px;
 }
 .guest-panel-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-
 .guest-panel-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(4,1fr);
   gap: 8px; margin-bottom: 12px;
 }
 .guest-panel-stat {
@@ -1287,7 +1257,6 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 }
 .guest-panel-stat-label { font-size: 9px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
 .guest-panel-stat-val   { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px; }
-
 .guest-panel-actions {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 8px; margin-top: 14px;
@@ -1296,105 +1265,42 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   padding: 10px 12px; border-radius: var(--radius-sm);
   border: 1px solid var(--border2); font-size: 12px; font-weight: 700;
   cursor: pointer; font-family: inherit; text-align: left;
-  transition: all 0.13s;
-  display: flex; align-items: center; gap: 6px;
+  transition: all 0.13s; display: flex; align-items: center; gap: 6px;
 }
-.action-active-green {
-  background: var(--green-light); color: var(--green-text);
-  border-color: var(--green-border);
-}
-.action-active-blue {
-  background: #dbeafe; color: #1e40af;
-  border-color: #93c5fd;
-}
-.action-inactive {
-  background: var(--surface2); color: var(--text2);
-}
-.action-inactive:hover { background: var(--surface); border-color: var(--border2); }
-.action-yellow {
-  background: #fefce8; color: #713f12;
-  border-color: #fde047;
-}
+.action-active-green { background: var(--green-light); color: var(--green-text); border-color: var(--green-border); }
+.action-active-blue  { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.action-inactive     { background: var(--surface2); color: var(--text2); }
+.action-inactive:hover { background: var(--surface); }
+.action-yellow { background: #fefce8; color: #713f12; border-color: #fde047; }
 .action-yellow:hover { background: #fde047; }
-.action-edit {
-  background: var(--surface2); color: var(--text2);
-  border-color: var(--border2);
-}
+.action-edit   { background: var(--surface2); color: var(--text2); border-color: var(--border2); }
 .action-edit:hover { background: var(--surface); }
 
 /* ─── PAYMENT TRACKER ────────────────────────────────────────────────────────── */
 .payment-tracker {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin-bottom: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 4px;
 }
 .payment-tracker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
 }
-.payment-summary {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 20px;
-}
+.payment-summary { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
 .payment-summary.full    { background: var(--green-light); color: var(--green-text); border: 1px solid var(--green-border); }
 .payment-summary.partial { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
 .payment-summary.none    { background: var(--surface2); color: var(--text3); border: 1px solid var(--border2); }
-
 .payment-history { margin-bottom: 10px; }
 .payment-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px dashed var(--border);
-  font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; border-bottom: 1px dashed var(--border); font-size: 12px;
 }
 .payment-entry:last-child { border-bottom: none; }
 .payment-date   { color: var(--text3); flex-shrink: 0; font-size: 11px; min-width: 60px; }
 .payment-note   { flex: 1; color: var(--text2); }
 .payment-amount { font-weight: 700; color: var(--green-text); flex-shrink: 0; }
-
-.payment-add-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-top: 4px;
-}
+.payment-add-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .payment-amount-input { max-width: 120px; }
 
-/* ─── CARD PAYMENT STATUS CLASSES ────────────────────────────────────────────── */
-.room-card.balance-full {
-  background: #c6edd5 !important;
-  border-color: #7dc4a0 !important;
-}
-.room-card.balance-full::before    { background: #16a34a !important; }
-.room-card.balance-full .room-num  { color: #0d3d22 !important; }
-.room-card.balance-full .room-guest{ color: #0a2e19 !important; }
-
-.room-card.balance-partial {
-  background: #dbeafe !important;
-  border-color: #93c5fd !important;
-}
-.room-card.balance-partial::before       { background: #2563eb !important; }
-.room-card.balance-partial .room-num     { color: #1e3a8a !important; }
-.room-card.balance-partial .room-guest   { color: #1e3a8a !important; }
-.room-card.balance-partial .room-type-label { color: #3b5ec6 !important; }
-
-/* Partial payment badge */
-.partial-badge {
-  font-size: 9px;
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-weight: 700;
-}
+/* ─── BALANCE TOGGLE BUTTONS ─────────────────────────────────────────────────── */
+.balance-paid-btn   { background: #dbeafe !important; color: #1e40af !important; border-color: #93c5fd !important; }
+.balance-unpaid-btn { background: var(--surface2) !important; color: var(--text2) !important; border-color: var(--border2) !important; }

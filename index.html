@@ -74,8 +74,8 @@
       <button class="nav-btn" id="nav-analytics" onclick="guardedShowPage('analytics',this)">
         <span class="nav-icon">📊</span><span>Analytics</span>
       </button>
-      <button class="nav-btn" id="nav-accounts" onclick="guardedShowPage('accounts',this)">
-        <span class="nav-icon">👥</span><span>Accounts</span>
+      <button class="nav-btn" id="nav-monthview" onclick="guardedShowPage('monthview',this)">
+        <span class="nav-icon">🗓</span><span>Month View</span>
       </button>
     </nav>
 
@@ -133,11 +133,9 @@
           <button class="filter-pill" onclick="setFilter('no-deposit',this)">🔑 No deposit</button>
         </div>
         <div class="legend-row">
-          <div class="legend-item"><div class="legend-dot" style="background:#16a34a;box-shadow:0 0 0 3px #c6edd5"></div>Occupied</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#1d4ed8;box-shadow:0 0 0 3px #93c5fd"></div>Balance paid</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#2563eb;box-shadow:0 0 0 3px #ffffff;border:1px solid #bfcfef"></div>Vacant</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#1f2937;box-shadow:0 0 0 3px #f3f4f6"></div>Maintenance</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#ca8a04;box-shadow:0 0 0 3px #fefce8"></div>Extended</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div>Occupied</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Vacant</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Maintenance</div>
           <div class="legend-item">|</div>
           <div class="legend-item"><span class="legend-badge src-T">Trip</span>Trip.com</div>
           <div class="legend-item"><span class="legend-badge src-W">Walk</span>Walk-in</div>
@@ -203,32 +201,30 @@
         </div>
       </div>
 
-      <!-- Accounts (admin only) -->
-      <div class="page" id="page-accounts">
-        <div class="section-title">Account Management</div>
-        <div id="accountsList"></div>
+      <!-- Month View -->
+      <div class="page" id="page-monthview">
+        <div class="mv-controls">
+          <div class="mv-nav">
+            <button class="cal-nav-btn" onclick="mvShift(-1)">&#8592;</button>
+            <span id="mvMonthLabel" style="font-size:14px;font-weight:700;min-width:140px;text-align:center"></span>
+            <button class="cal-nav-btn" onclick="mvShift(1)">&#8594;</button>
+          </div>
+          <button class="today-btn" onclick="mvGoToday()">This month</button>
+          <div class="mv-legend">
+            <span class="mv-leg"><span class="mv-dot" style="background:#c6edd5"></span>Occupied</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#dbeafe"></span>Partial</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#a8d5b8"></span>Paid</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#fefce8"></span>Extended</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#f3f4f6;border:1px solid #d1d5db"></span>Maint.</span>
+          </div>
+        </div>
+        <div class="mv-wrap" id="mvWrap"></div>
       </div>
 
     </div><!-- /.main -->
   </div><!-- /.content -->
 </div><!-- /.shell / #appShell -->
 
-
-<!-- ── Account Modal (add / edit) ────────────────────────────────────────────── -->
-<div class="overlay" id="acctModal" style="display:none"
-     onclick="if(event.target===this)closeModal('acctModal')">
-  <div class="modal" style="max-width:440px">
-    <div class="modal-head">
-      <div class="modal-title" id="acctModalTitle">Add Account</div>
-      <button class="modal-close" onclick="closeModal('acctModal')">&#x2715;</button>
-    </div>
-    <div class="modal-body" id="acctModalBody"></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost"   onclick="closeModal('acctModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveAccount()">Save</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── Room Modal ───────────────────────────────────────────────────────────── -->
 <div class="overlay" id="roomModal" style="display:none" onclick="closeRoomModal(event)">
@@ -364,9 +360,9 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="auth.js?v=19"></script>
-<script src="import-export.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="auth.js"></script>
+<script src="import-export.js"></script>
+<script src="app.js"></script>
 
 <script>
   // Boot sequence — runs after all scripts load

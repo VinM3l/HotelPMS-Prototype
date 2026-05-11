@@ -1,11 +1,10 @@
 // ─── IMPORT / EXPORT ─────────────────────────────────────────────────────────
-// EXPORT: uses ExcelJS (supports full cell colouring/styling)
-// IMPORT: uses SheetJS  (lightweight, great for reading)
-// Both load from CDN on first use.
+// EXPORT : ExcelJS  — full cell colour/style support
+// IMPORT : SheetJS  — lightweight, great for reading
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EXCELJS_CDN  = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
-const SHEETJS_CDN  = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+const EXCELJS_CDN = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+const SHEETJS_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
 function loadScript(url, windowKey) {
   return new Promise((resolve, reject) => {
@@ -20,167 +19,101 @@ function loadScript(url, windowKey) {
 const loadExcelJS = () => loadScript(EXCELJS_CDN, 'ExcelJS');
 const loadSheetJS = () => loadScript(SHEETJS_CDN, 'XLSX');
 
-// ─── COLOUR PALETTE (matches dashboard CSS exactly) ──────────────────────────
-const COLOURS = {
-  headerBg:     '1A7A4A', headerFg: 'FFFFFF', titleFg: '1A7A4A',
-
-  // Occupied normal — darker pastel green (matches .room-card.occupied)
-  occBg:        'C6EDD5', occFg: '145C38', occBorder: '7DC4A0',
-
-  // Occupied fully paid — same darker green, bold to distinguish
-  occFullBg:    'A8D5B8', occFullFg: '0D3D22', occFullBorder: '5AAF84',
-
-  // Occupied partial payment — pastel blue (matches .room-card.balance-partial)
-  occPartialBg: 'DBEAFE', occPartialFg: '1E3A8A', occPartialBorder: '93C5FD',
-
-  // Multi-guest normal
-  multiOccBg:   'B8E8CC', multiOccFg: '0D3D22', multiOccBorder: '5AAF84',
-
-  // Multi-guest full paid
-  multiFullBg:  'A0D4B4', multiFullFg: '0A2E19', multiFullBorder: '4A9E72',
-
-  // Multi-guest partial
-  multiPartialBg: 'BFDBFE', multiPartialFg: '1E3A8A', multiPartialBorder: '60A5FA',
-
-  // Extended #1: yellow
-  extBg:        'FEF9C3', extFg: '713F12', extBorder: 'FDE047',
-
-  // Extended #2 alt: deeper green
-  ext2Bg:       'DCFCE7', ext2Fg: '14532D', ext2Border: '86EFAC',
-
-  // Maintenance: light grey
-  maintBg:      'F3F4F6', maintFg: '4B5563',
-
-  // Vacant: white
-  vacantBg:     'FFFFFF', vacantFg: '9CA3AF',
-
-  altBg:        'F9FAFB',
-  totalsBg:     'EDF7F0',
-  notesBg:      'F0F9F5',
+// ─── COLOUR PALETTE ───────────────────────────────────────────────────────────
+const C = {
+  headerBg:       '1A7A4A', headerFg:    'FFFFFF',
+  titleFg:        '1A7A4A', titleBg:     'E8F5EE',
+  // Occupied — darker pastel green
+  occBg:          'C6EDD5', occFg:       '145C38', occBorder:  '7DC4A0',
+  // Fully paid — even darker green + bold
+  occFullBg:      'A8D5B8', occFullFg:   '0D3D22', occFullBorder: '5AAF84',
+  // Partial payment — pastel blue
+  occPartBg:      'DBEAFE', occPartFg:   '1E3A8A', occPartBorder: '93C5FD',
+  // Multi-guest shades
+  multiBg:        'B8E8CC', multiFg:     '0D3D22', multiBorder: '5AAF84',
+  multiFullBg:    'A0D4B4', multiFullFg: '0A2E19', multiFullBorder: '4A9E72',
+  multiPartBg:    'BFDBFE', multiPartFg: '1E3A8A', multiPartBorder: '60A5FA',
+  // Extended stays
+  extBg:          'FEF9C3', extFg:       '713F12', extBorder:  'FDE047',
+  ext2Bg:         'DCFCE7', ext2Fg:      '14532D', ext2Border: '86EFAC',
+  // Maintenance
+  maintBg:        'F3F4F6', maintFg:     '4B5563',
+  // Vacant — white
+  vacantBg:       'FFFFFF', vacantFg:    '9CA3AF',
+  altBg:          'F9FAFB',
+  totalsBg:       'EDF7F0', notesBg:     'F0F9F5',
 };
 
-// ─── DATE / PERIOD HELPERS ────────────────────────────────────────────────────
-function startOfMonth(y, m) { return new Date(y, m, 1); }
-function endOfMonth(y, m)   { return new Date(y, m + 1, 0); }
-function daysInMonth(y, m)  { return new Date(y, m + 1, 0).getDate(); }
+// ─── STYLE HELPERS ────────────────────────────────────────────────────────────
+const hexFill = h => ({ type:'pattern', pattern:'solid', fgColor:{ argb:'FF'+h } });
+const hexFont = (h, o={}) => ({ color:{argb:'FF'+h}, name:'Arial', size:o.size||9, bold:o.bold||false, italic:o.italic||false });
+const side    = h => ({ style:'thin', color:{ argb:'FF'+h } });
+const border  = h => { const s=side(h); return { top:s, bottom:s, left:s, right:s }; };
+
+function applyHeader(cell) {
+  cell.fill      = hexFill(C.headerBg);
+  cell.font      = hexFont(C.headerFg, { bold:true, size:10 });
+  cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+  cell.border    = border('AAAAAA');
+}
+
+function applyCell(cell, type, isAlt) {
+  const vBg = isAlt ? C.altBg : C.vacantBg;
+  const map = {
+    occupied:     { bg:C.occBg,      fg:C.occFg,      bd:C.occBorder,      bold:false },
+    'occ-full':   { bg:C.occFullBg,  fg:C.occFullFg,  bd:C.occFullBorder,  bold:true  },
+    'occ-partial':{ bg:C.occPartBg,  fg:C.occPartFg,  bd:C.occPartBorder,  bold:false },
+    multi:        { bg:C.multiBg,    fg:C.multiFg,    bd:C.multiBorder,    bold:false },
+    'multi-full': { bg:C.multiFullBg,fg:C.multiFullFg,bd:C.multiFullBorder,bold:true  },
+    'multi-part': { bg:C.multiPartBg,fg:C.multiPartFg,bd:C.multiPartBorder,bold:false },
+    ext:          { bg:C.extBg,      fg:C.extFg,      bd:C.extBorder,      bold:true  },
+    ext2:         { bg:C.ext2Bg,     fg:C.ext2Fg,     bd:C.ext2Border,     bold:true  },
+    maint:        { bg:C.maintBg,    fg:C.maintFg,    bd:'D1D5DB',         bold:false, italic:true },
+  };
+  const s = map[type];
+  if (s) {
+    cell.fill   = hexFill(s.bg);
+    cell.font   = hexFont(s.fg, { bold:s.bold, italic:s.italic||false, size:type==='multi'||type==='multi-full'||type==='multi-part'?8:9 });
+    cell.border = border(s.bd);
+  } else {
+    cell.fill   = hexFill(vBg);
+    cell.font   = hexFont(C.vacantFg, { size:9 });
+    cell.border = border('E5E7EB');
+  }
+  cell.alignment = { vertical:'middle', wrapText:true, indent:1 };
+}
+
+// ─── DATE HELPERS ─────────────────────────────────────────────────────────────
+function daysInMonth(y,m)  { return new Date(y, m+1, 0).getDate(); }
+function startOfMonth(y,m) { return new Date(y, m, 1); }
+function endOfMonth(y,m)   { return new Date(y, m+1, 0); }
 
 function getExportMonths() {
-  const now  = new Date();
-  const base = new Date(now.getFullYear(), now.getMonth(), 1);
+  const now = new Date();
   const months = [];
   for (let i = -1; i <= 2; i++) {
-    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth() });
+    const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+    months.push({ year:d.getFullYear(), month:d.getMonth() });
   }
   return months;
 }
 
-function excelSheetName(hotelKey, year, month) {
-  const label = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  return hotelKey === 'pool' ? `${label}-Pool` : label;
-}
+const SRC = { T:'T', W:'W', B:'B', AG:'Ag', EX:'Ex' };
+const SRCLABEL = { T:'Trip.com', W:'Walk-in', B:'Booking.com', AG:'Agoda', EX:'Expedia' };
 
-const SRC_CODE = { T:'T', W:'W', B:'B', AG:'Ag', EX:'Ex' };
-
-// ─── CELL TYPE DETECTION ──────────────────────────────────────────────────────
-function getCellType(cellText) {
-  if (!cellText)                      return 'vacant';
-  if (cellText === 'MAINT')           return 'maint';
-  if (cellText.includes('[PAID]'))    return 'paid';
-  if (cellText.includes('[PART]'))    return 'partial';
-  if (cellText.includes('[2G]'))      return 'multi';
-  if (cellText.includes('[EXT2]'))    return 'ext2';
-  if (cellText.includes('[EXT]'))     return 'ext';
-  return 'occupied';
-}
-
-// ─── EXCELJS STYLE HELPERS ────────────────────────────────────────────────────
-function hexFill(hex) {
-  return { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } };
-}
-function hexFont(hex, opts = {}) {
-  return { color: { argb: 'FF' + hex }, name: 'Arial', size: opts.size || 9,
-           bold: opts.bold || false, italic: opts.italic || false };
-}
-function thinBorder(hex) {
-  const s = { style: 'thin', color: { argb: 'FF' + hex } };
-  return { top: s, bottom: s, left: s, right: s };
-}
-
-function applyHeaderStyle(cell) {
-  cell.fill      = hexFill(COLOURS.headerBg);
-  cell.font      = hexFont(COLOURS.headerFg, { bold: true, size: 10 });
-  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  cell.border    = thinBorder('AAAAAA');
-}
-
-function applyTitleStyle(cell) {
-  cell.font      = hexFont(COLOURS.titleFg, { bold: true, size: 13 });
-  cell.fill      = hexFill('E8F5EE');
-  cell.alignment = { horizontal: 'left', vertical: 'middle' };
-}
-
-function applyCellStyle(cell, type, isAltRow) {
-  const rowBg = isAltRow ? COLOURS.altBg : COLOURS.vacantBg;
-  switch (type) {
-    // ── Normal occupied (no payment) — darker pastel green ──
-    case 'occupied':
-      cell.fill   = hexFill(COLOURS.occBg);
-      cell.font   = hexFont(COLOURS.occFg, { size: 9 });
-      cell.border = thinBorder(COLOURS.occBorder);
-      break;
-    // ── Fully paid — even darker green, bold ──
-    case 'occ-full':
-      cell.fill   = hexFill(COLOURS.occFullBg);
-      cell.font   = hexFont(COLOURS.occFullFg, { bold: true, size: 9 });
-      cell.border = thinBorder(COLOURS.occFullBorder);
-      break;
-    // ── Partial payment — pastel blue ──
-    case 'occ-partial':
-      cell.fill   = hexFill(COLOURS.occPartialBg);
-      cell.font   = hexFont(COLOURS.occPartialFg, { size: 9 });
-      cell.border = thinBorder(COLOURS.occPartialBorder);
-      break;
-    // ── Multi-guest variants ──
-    case 'multi':
-      cell.fill   = hexFill(COLOURS.multiOccBg);
-      cell.font   = hexFont(COLOURS.multiOccFg, { size: 8 });
-      cell.border = thinBorder(COLOURS.multiOccBorder);
-      break;
-    case 'multi-full':
-      cell.fill   = hexFill(COLOURS.multiFullBg);
-      cell.font   = hexFont(COLOURS.multiFullFg, { bold: true, size: 8 });
-      cell.border = thinBorder(COLOURS.multiFullBorder);
-      break;
-    case 'multi-partial':
-      cell.fill   = hexFill(COLOURS.multiPartialBg);
-      cell.font   = hexFont(COLOURS.multiPartialFg, { size: 8 });
-      cell.border = thinBorder(COLOURS.multiPartialBorder);
-      break;
-    // ── Extensions ──
-    case 'ext':
-      cell.fill   = hexFill(COLOURS.extBg);
-      cell.font   = hexFont(COLOURS.extFg, { bold: true, size: 9 });
-      cell.border = thinBorder(COLOURS.extBorder);
-      break;
-    case 'ext2':
-      cell.fill   = hexFill(COLOURS.ext2Bg);
-      cell.font   = hexFont(COLOURS.ext2Fg, { bold: true, size: 9 });
-      cell.border = thinBorder(COLOURS.ext2Border);
-      break;
-    // ── Maintenance ──
-    case 'maint':
-      cell.fill   = hexFill(COLOURS.maintBg);
-      cell.font   = hexFont(COLOURS.maintFg, { italic: true, size: 9 });
-      cell.border = thinBorder('D1D5DB');
-      break;
-    // ── Vacant ──
-    default:
-      cell.fill   = hexFill(rowBg);
-      cell.font   = hexFont(COLOURS.vacantFg, { size: 9 });
-      cell.border = thinBorder('E5E7EB');
-  }
-  cell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+// ─── CELL TYPE ────────────────────────────────────────────────────────────────
+function getCellPaymentType(booking) {
+  if (!booking) return 'vacant';
+  const paid = (booking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  const roomDef = DB.hotels[booking.hotel]?.rooms[booking.room];
+  if (!roomDef) return 'occupied';
+  const br = (DB.prices[roomDef.type]||{})[booking.source]||0;
+  const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
+  const n  = Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
+  const due = applyDiscount((br+ar)*n, booking);
+  if (paid <= 0)   return 'occupied';
+  if (paid >= due) return 'full';
+  return 'partial';
 }
 
 // ─── BUILD ONE SHEET ──────────────────────────────────────────────────────────
@@ -188,531 +121,413 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
   const days      = daysInMonth(year, month);
   const mStart    = startOfMonth(year, month);
   const mEnd      = endOfMonth(year, month);
-  const monthLabel = mStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const sheetName  = excelSheetName(hotelKey, year, month);
+  const monthLabel = mStart.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const suffix    = hotelKey==='pool'?'-Pool':'';
+  const sheetLabel = mStart.toLocaleDateString('en-US',{month:'short',year:'numeric'})+suffix;
 
-  const ws = wb.addWorksheet(sheetName, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }]
+  const ws = wb.addWorksheet(sheetLabel.slice(0,31), {
+    views:[{ state:'frozen', xSplit:2, ySplit:2 }]
   });
 
-  // ── Column widths ──
-  ws.getColumn(1).width = 8;   // Room
-  ws.getColumn(2).width = 18;  // Type (hidden in compact view)
-  for (let d = 1; d <= days; d++) ws.getColumn(d + 2).width = 23;
-  ws.getColumn(days + 3).width = 9;   // Nights
-  ws.getColumn(days + 4).width = 16;  // Income
-  ws.getColumn(days + 5).width = 12;  // Deposit
-  ws.getColumn(days + 6).width = 28;  // Notes
+  // Column widths
+  ws.getColumn(1).width = 8;
+  ws.getColumn(2).width = 18;
+  for (let d=1;d<=days;d++) ws.getColumn(d+2).width = 23;
+  ws.getColumn(days+3).width = 9;
+  ws.getColumn(days+4).width = 16;
+  ws.getColumn(days+5).width = 12;
+  ws.getColumn(days+6).width = 32;
 
-  // ── Row 1: Title ──
-  const titleRow = ws.getRow(1);
-  titleRow.height = 22;
-  const titleCell = titleRow.getCell(1);
-  titleCell.value = `${hotel.name} — ${monthLabel}`;
-  applyTitleStyle(titleCell);
-  ws.mergeCells(1, 1, 1, days + 6);
+  // Title row
+  const titleRow = ws.getRow(1); titleRow.height = 22;
+  const tc = titleRow.getCell(1);
+  tc.value = `${hotel.name} — ${monthLabel}`;
+  tc.font  = hexFont(C.titleFg,{bold:true,size:13});
+  tc.fill  = hexFill(C.titleBg);
+  tc.alignment = {horizontal:'left',vertical:'middle'};
+  ws.mergeCells(1,1,1,days+6);
 
-  // ── Row 2: Headers ──
-  const hdrRow = ws.getRow(2);
-  hdrRow.height = 18;
-  const headers = ['Room', 'Type'];
-  for (let d = 1; d <= days; d++) {
-    const dt = new Date(year, month, d);
-    headers.push(dt.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }));
+  // Header row
+  const hRow = ws.getRow(2); hRow.height = 18;
+  ['Room','Type'].forEach((h,i)=>{ const c=hRow.getCell(i+1); c.value=h; applyHeader(c); });
+  for (let d=1;d<=days;d++) {
+    const dt  = new Date(year,month,d);
+    const c   = hRow.getCell(d+2);
+    c.value   = dt.toLocaleDateString('en-US',{weekday:'short',day:'numeric'});
+    applyHeader(c);
   }
-  headers.push('Nights', 'Est. Income (₱)', 'Key Deposit', 'Notes');
-  headers.forEach((h, i) => {
-    const c = hdrRow.getCell(i + 1);
-    c.value = h;
-    applyHeaderStyle(c);
+  ['Nights','Est. Income (₱)','Key Deposit','Notes'].forEach((h,i)=>{
+    const c=hRow.getCell(days+3+i); c.value=h; applyHeader(c);
   });
 
-  // ── Data rows ──
-  const sortedRooms = [...rooms].sort((a, b) => {
-    const an = /^\d+$/.test(a), bn = /^\d+$/.test(b);
-    if (an && bn) return parseInt(a) - parseInt(b);
-    if (an) return -1; if (bn) return 1;
+  // Sort rooms
+  const sortedRooms = [...rooms].sort((a,b)=>{
+    const an=/^\d+$/.test(a),bn=/^\d+$/.test(b);
+    if(an&&bn) return parseInt(a)-parseInt(b);
+    if(an) return -1; if(bn) return 1;
     return a.localeCompare(b);
   });
 
-  sortedRooms.forEach((roomNum, ri) => {
-    const roomDef   = hotel.rooms[roomNum];
-    const rowIdx    = ri + 3;
-    const isAlt     = ri % 2 === 1;
-    const row       = ws.getRow(rowIdx);
-    row.height      = 30;
+  sortedRooms.forEach((roomNum,ri)=>{
+    const roomDef = hotel.rooms[roomNum];
+    const isAlt   = ri%2===1;
+    const row     = ws.getRow(ri+3); row.height=30;
 
-    // Room number cell
-    const roomCell  = row.getCell(1);
-    roomCell.value  = roomNum;
-    roomCell.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
-    roomCell.font   = hexFont('374151', { bold: true, size: 10 });
-    roomCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    roomCell.border = thinBorder('D1D5DB');
+    // Room cell
+    const rc=row.getCell(1);
+    rc.value=roomNum; rc.fill=hexFill(isAlt?C.altBg:C.vacantBg);
+    rc.font=hexFont('374151',{bold:true,size:10}); rc.border=border('D1D5DB');
+    rc.alignment={horizontal:'center',vertical:'middle'};
 
     // Type cell
-    const typeCell  = row.getCell(2);
-    typeCell.value  = roomDef.label;
-    typeCell.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
-    typeCell.font   = hexFont('6B7280', { size: 9 });
-    typeCell.alignment = { vertical: 'middle' };
-    typeCell.border = thinBorder('D1D5DB');
+    const tc2=row.getCell(2);
+    tc2.value=roomDef.label; tc2.fill=hexFill(isAlt?C.altBg:C.vacantBg);
+    tc2.font=hexFont('6B7280',{size:9}); tc2.border=border('D1D5DB');
+    tc2.alignment={vertical:'middle'};
 
-    let totalNights = 0, totalIncome = 0;
+    let totalNights=0, totalIncome=0;
 
-    for (let d = 1; d <= days; d++) {
-      const date    = new Date(year, month, d);
-      const dateStr = fmtDate(date);
+    for (let d=1;d<=days;d++) {
+      const date = new Date(year,month,d);
+      const cell = row.getCell(d+2);
 
-      // Find ALL bookings active on this day for this room
-      const dayBookings = DB.bookings.filter(b =>
-        b.hotel === hotelKey && b.room === roomNum && isInRange(date, b.checkin, b.checkout)
-      );
-
-      const col  = d + 2;
-      const cell = row.getCell(col);
-
-      if (dayBookings.length === 0) {
-        if (roomDef.status === 'maintenance') {
-          cell.value = 'MAINT';
-          applyCellStyle(cell, 'maint', isAlt);
-        } else {
-          cell.value = '';
-          applyCellStyle(cell, 'vacant', isAlt);
-        }
-        continue;
+      if (roomDef.status==='maintenance') {
+        cell.value='MAINT'; applyCell(cell,'maint',isAlt); continue;
       }
 
-      // Build cell text — handle multi-guest with line breaks
-      const isMulti = dayBookings.length > 1;
+      // All bookings on this day
+      const dayBookings = DB.bookings.filter(b=>
+        b.hotel===hotelKey&&b.room===roomNum&&isInRange(date,b.checkin,b.checkout)
+      );
 
-      // Compute payment status for the PRIMARY booking (first one)
-      const primaryBooking = dayBookings[0];
-      const pmtPaid = (primaryBooking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-      const pmtDue  = (()=>{
-        const br = (DB.prices[roomDef.type]||{})[primaryBooking.source]||0;
-        const ar = (primaryBooking.extraHead||0)*(DB.addons.extraHead||0)
-                 + (primaryBooking.extraBed||0)*(DB.addons.extraBed||0);
-        const n  = Math.round((parseDate(primaryBooking.checkout)-parseDate(primaryBooking.checkin))/864e5)+1;
-        return applyDiscount((br+ar)*n, primaryBooking);
-      })();
-      const payStatus = pmtPaid<=0?'none':pmtPaid>=pmtDue?'full':'partial';
+      if (!dayBookings.length) {
+        cell.value=''; applyCell(cell,'vacant',isAlt); continue;
+      }
 
-      let cellType = 'occupied'; // default
-      let lines    = [];
+      const isMulti = dayBookings.length>1;
+      let cellType  = 'occupied';
+      let lines     = [];
 
-      dayBookings.forEach((booking, bi) => {
-        const src  = SRC_CODE[booking.source] || booking.source;
-        const name = booking.guest.toUpperCase();
-        let txt    = `${src} - ${roomNum} ${name}`;
-        if (booking.extraHead > 0) txt += ` +${booking.extraHead}H`;
-        if (booking.extraBed  > 0) txt += ` +${booking.extraBed}B`;
+      dayBookings.forEach((booking,bi)=>{
+        const src  = SRC[booking.source]||booking.source;
+        let txt    = `${src} - ${roomNum} ${booking.guest.toUpperCase()}`;
+        if(booking.extraHead>0) txt+=` +${booking.extraHead}H`;
+        if(booking.extraBed>0)  txt+=` +${booking.extraBed}B`;
 
-        // Detect extension period
-        const exts = booking.extensions || [];
-        if (exts.length > 0) {
-          const origCo = parseDate(exts[0].originalCheckout || booking.checkout);
-          const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-          if (d0 > origCo) {
-            for (let ei = 0; ei < exts.length; ei++) {
-              const prevEnd = ei === 0 ? origCo : parseDate(exts[ei-1].checkout);
-              const thisEnd = parseDate(exts[ei].checkout);
-              if (d0 > prevEnd && d0 <= thisEnd) {
-                txt += ei % 2 === 0 ? ' [EXT]' : ' [EXT2]';
-                if (bi === 0) cellType = ei % 2 === 0 ? 'ext' : 'ext2';
+        // Extension detection
+        const exts=booking.extensions||[];
+        if(exts.length>0){
+          const origCo=parseDate(exts[0].originalCheckout||booking.checkout);
+          const d0=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+          if(d0>origCo){
+            for(let ei=0;ei<exts.length;ei++){
+              const prevEnd=ei===0?origCo:parseDate(exts[ei-1].checkout);
+              const thisEnd=parseDate(exts[ei].checkout);
+              if(d0>prevEnd&&d0<=thisEnd){
+                txt+=ei%2===0?' [EXT]':' [EXT2]';
+                if(bi===0) cellType=ei%2===0?'ext':'ext2';
                 break;
               }
             }
           }
         }
 
+        // Payment colour on primary booking
+        if(bi===0&&(cellType==='occupied')){
+          const pmtType=getCellPaymentType(booking);
+          if(pmtType==='full')    cellType=isMulti?'multi-full':'occ-full';
+          else if(pmtType==='partial') cellType=isMulti?'multi-part':'occ-partial';
+          else if(isMulti)        cellType='multi';
+        }
+
         lines.push(txt);
+        if(bi===0){
+          totalNights++;
+          const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
+          const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
+          totalIncome+=br+ar;
+        }
       });
 
-      // Apply payment status colour ONLY if not already coloured by extension
-      // Matches dashboard: full=darker green, partial=blue, none=normal green
-      if (cellType === 'occupied' || cellType === 'multi') {
-        if      (payStatus === 'full')    cellType = isMulti ? 'multi-full'    : 'occ-full';
-        else if (payStatus === 'partial') cellType = isMulti ? 'multi-partial' : 'occ-partial';
-        else if (isMulti)                 cellType = 'multi';
-      }
-
-      if (isMulti) lines[0] += ' [2G]';
-
-      cell.value = lines.join('\n');
-      applyCellStyle(cell, cellType, isAlt);
-
-      // Count nights and income for first booking only (to avoid double-counting)
-      const booking = dayBookings[0];
-      totalNights++;
-      const baseRate = (DB.prices[roomDef.type] || {})[booking.source] || 0;
-      const addon    = (booking.extraHead||0)*(DB.addons.extraHead||0)
-                     + (booking.extraBed||0)*(DB.addons.extraBed||0);
-      totalIncome += baseRate + addon;
+      cell.value=lines.join('\n');
+      applyCell(cell,cellType,isAlt);
     }
 
-    // Totals columns
-    const monthBookings = DB.bookings.filter(b => {
-      if (b.hotel !== hotelKey || b.room !== roomNum) return false;
-      const ci = parseDate(b.checkin), co = parseDate(b.checkout);
-      return ci <= mEnd && co >= mStart;
+    // Summary columns
+    const monthBookings=DB.bookings.filter(b=>{
+      if(b.hotel!==hotelKey||b.room!==roomNum) return false;
+      return parseDate(b.checkin)<=mEnd&&parseDate(b.checkout)>=mStart;
     });
-    const depositAll = monthBookings.length > 0 && monthBookings.every(b => hasKeyDeposit(b.id));
+    const depositAll=monthBookings.length>0&&monthBookings.every(b=>DB.keyDeposits[b.id]);
 
-    // Build payment summary for notes column
-    const paymentSummary = monthBookings.map(b => {
-      const paid = (b.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-      const due  = bookingTotalDue ? bookingTotalDue(b) : 0;
-      if (paid <= 0) return null;
-      return `${b.guest.split(' ')[0]}: ${paid>=due?'PAID IN FULL':'PARTIAL ₱'+Math.round(paid).toLocaleString()+'/₱'+Math.round(due).toLocaleString()}`;
+    // Payment summary for notes
+    const pmtSummary=monthBookings.map(b=>{
+      const paid=(b.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+      if(paid<=0) return null;
+      const due=(DB.prices[hotel.rooms[roomNum]?.type]||{})[b.source]||0;
+      return `${b.guest.split(' ')[0]}: ${paid>0?(paid>=due?'PAID':'PART ₱'+Math.round(paid).toLocaleString()):''}`;
     }).filter(Boolean).join('; ');
 
-    const noteStr = [
-      monthBookings.map(b=>b.notes).filter(Boolean).join('; '),
-      paymentSummary
-    ].filter(Boolean).join(' | ');
+    const noteStr=[monthBookings.map(b=>b.notes).filter(Boolean).join('; '),pmtSummary].filter(Boolean).join(' | ');
 
-    const statStyle = { fill: hexFill(COLOURS.notesBg), font: hexFont('374151', { size: 10 }), border: thinBorder('D1D5DB') };
+    const statStyle={ fill:hexFill(C.notesBg), font:hexFont('374151',{size:10}), border:border('D1D5DB'), alignment:{vertical:'middle'} };
 
-    const nc = row.getCell(days + 3);
-    nc.value = totalNights;
-    Object.assign(nc, statStyle);
+    const nc=row.getCell(days+3); nc.value=totalNights;
+    Object.assign(nc,{fill:statStyle.fill,font:statStyle.font,border:statStyle.border,alignment:statStyle.alignment});
 
-    const ic = row.getCell(days + 4);
-    ic.value     = totalIncome;
-    ic.numFmt    = '₱#,##0';
-    ic.fill      = statStyle.fill;
-    ic.font      = hexFont('145C38', { bold: true, size: 10 });
-    ic.border    = statStyle.border;
+    const ic=row.getCell(days+4); ic.value=totalIncome; ic.numFmt='₱#,##0';
+    ic.fill=statStyle.fill; ic.font=hexFont('145C38',{bold:true,size:10}); ic.border=statStyle.border; ic.alignment=statStyle.alignment;
 
-    const dc = row.getCell(days + 5);
-    dc.value = monthBookings.length === 0 ? '' : depositAll ? 'Yes' : 'No';
-    Object.assign(dc, statStyle);
+    const dc=row.getCell(days+5); dc.value=monthBookings.length===0?'':depositAll?'Yes':'No';
+    Object.assign(dc,{fill:statStyle.fill,font:statStyle.font,border:statStyle.border,alignment:statStyle.alignment});
 
-    const notec = row.getCell(days + 6);
-    notec.value = noteStr;
-    Object.assign(notec, statStyle);
-    notec.alignment = { vertical: 'middle', wrapText: true };
+    const notec=row.getCell(days+6); notec.value=noteStr;
+    notec.fill=statStyle.fill; notec.font=statStyle.font; notec.border=statStyle.border;
+    notec.alignment={vertical:'middle',wrapText:true};
   });
 
-  // ── Footer: occupancy count per day ──
-  const footerRow = ws.getRow(sortedRooms.length + 3);
-  footerRow.height = 16;
-  const fc0 = footerRow.getCell(1);
-  fc0.value  = 'TOTALS';
-  fc0.fill   = hexFill(COLOURS.totalsBg);
-  fc0.font   = hexFont('145C38', { bold: true, size: 10 });
-  fc0.border = thinBorder('7DC4A0');
-  footerRow.getCell(2).fill = hexFill(COLOURS.totalsBg);
-
-  for (let d = 1; d <= days; d++) {
-    const date = new Date(year, month, d);
-    const cnt  = sortedRooms.filter(r =>
-      DB.bookings.some(b => b.hotel === hotelKey && b.room === r && isInRange(date, b.checkin, b.checkout))
+  // Footer totals row
+  const footerRow=ws.getRow(sortedRooms.length+3); footerRow.height=16;
+  const f0=footerRow.getCell(1); f0.value='TOTALS';
+  f0.fill=hexFill(C.totalsBg); f0.font=hexFont('145C38',{bold:true,size:10}); f0.border=border('7DC4A0');
+  footerRow.getCell(2).fill=hexFill(C.totalsBg);
+  for(let d=1;d<=days;d++){
+    const date=new Date(year,month,d);
+    const cnt=sortedRooms.filter(r=>
+      DB.bookings.some(b=>b.hotel===hotelKey&&b.room===r&&isInRange(date,b.checkin,b.checkout))
     ).length;
-    const fc = footerRow.getCell(d + 2);
-    fc.value  = cnt > 0 ? `${cnt} occ` : '';
-    fc.fill   = hexFill(COLOURS.totalsBg);
-    fc.font   = hexFont('145C38', { size: 9, bold: cnt > 0 });
-    fc.alignment = { horizontal: 'center', vertical: 'middle' };
-    fc.border = thinBorder('7DC4A0');
+    const fc=footerRow.getCell(d+2);
+    fc.value=cnt>0?`${cnt} occ`:'';
+    fc.fill=hexFill(C.totalsBg); fc.font=hexFont('145C38',{size:9,bold:cnt>0});
+    fc.alignment={horizontal:'center',vertical:'middle'}; fc.border=border('7DC4A0');
   }
 }
 
-// ─── BUILD SUMMARY SHEET ──────────────────────────────────────────────────────
+// ─── SUMMARY SHEET ────────────────────────────────────────────────────────────
 function buildSummarySheet(wb, months) {
-  const ws = wb.addWorksheet('Summary');
-  ws.getColumn(1).width = 28;
-  ws.getColumn(2).width = 16;
-  ws.getColumn(3).width = 14;
-  ws.getColumn(4).width = 14;
-  ws.getColumn(5).width = 22;
-  ws.getColumn(6).width = 12;
+  const ws=wb.addWorksheet('Summary');
+  [28,16,14,14,22,12].forEach((w,i)=>ws.getColumn(i+1).width=w);
 
-  let rowIdx = 1;
+  let rowIdx=1;
+  const addTitle=(text)=>{ const row=ws.getRow(rowIdx++); row.height=20;
+    const c=row.getCell(1); c.value=text; c.font=hexFont(C.titleFg,{bold:true,size:13}); c.fill=hexFill(C.titleBg); };
+  const addHdr=(cols)=>{ const row=ws.getRow(rowIdx++); row.height=16;
+    cols.forEach((h,i)=>{ const c=row.getCell(i+1); c.value=h; applyHeader(c); }); };
+  const addData=(cols,isAlt)=>{ const row=ws.getRow(rowIdx++); row.height=16;
+    cols.forEach((v,i)=>{ const c=row.getCell(i+1); c.value=v;
+      c.fill=hexFill(isAlt?C.altBg:C.vacantBg); c.font=hexFont('374151',{size:10}); c.border=border('E5E7EB');
+      if(typeof v==='number'&&i===4){ c.numFmt='₱#,##0'; c.font=hexFont('145C38',{bold:true,size:10}); }
+    }); };
 
-  const addTitle = (text) => {
-    const row = ws.getRow(rowIdx++);
-    const c   = row.getCell(1);
-    c.value   = text;
-    c.font    = hexFont(COLOURS.titleFg, { bold: true, size: 13 });
-    c.fill    = hexFill('E8F5EE');
-    row.height = 20;
-  };
+  addTitle('Hotel PMS — Export Summary'); rowIdx++;
 
-  const addHeader = (cols) => {
-    const row = ws.getRow(rowIdx++);
-    cols.forEach((h, i) => {
-      const c = row.getCell(i + 1);
-      c.value = h;
-      applyHeaderStyle(c);
+  for(const {key,label} of [{key:'square',label:'Square Hotel'},{key:'pool',label:'Pool Hotel'}]){
+    const hRow=ws.getRow(rowIdx++); hRow.height=18;
+    const hc=hRow.getCell(1); hc.value=label; hc.font=hexFont('1A7A4A',{bold:true,size:12});
+    addHdr(['Month','Occ. Nights','Rooms','Occupancy %','Est. Income (₱)','Bookings']);
+    months.forEach(({year,month},mi)=>{
+      const mLabel=new Date(year,month,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+      const mS=startOfMonth(year,month), mE=endOfMonth(year,month);
+      const rms=Object.keys(DB.hotels[key]?.rooms||{});
+      const days2=daysInMonth(year,month);
+      let occ=0;
+      rms.forEach(r=>{ for(let d=1;d<=days2;d++){
+        const dt=new Date(year,month,d);
+        if(DB.bookings.some(b=>b.hotel===key&&b.room===r&&isInRange(dt,b.checkin,b.checkout))) occ++;
+      }});
+      const income=DB.bookings.filter(b=>b.hotel===key).reduce((s,b)=>{
+        const ci=parseDate(b.checkin),co=parseDate(b.checkout);
+        const st=ci<mS?mS:ci, en=co>mE?mE:co;
+        if(st>en) return s;
+        const n=Math.round((en-st)/864e5)+1;
+        const rd=DB.hotels[key]?.rooms[b.room];
+        if(!rd) return s;
+        const br=(DB.prices[rd.type]||{})[b.source]||0;
+        const ar=(b.extraHead||0)*(DB.addons.extraHead||0)+(b.extraBed||0)*(DB.addons.extraBed||0);
+        return s+applyDiscount((br+ar)*n,b);
+      },0);
+      const bkCnt=DB.bookings.filter(b=>{ if(b.hotel!==key) return false;
+        return parseDate(b.checkin)<=mE&&parseDate(b.checkout)>=mS; }).length;
+      const pct=rms.length*days2>0?((occ/(rms.length*days2))*100).toFixed(1)+'%':'0%';
+      addData([mLabel,occ,rms.length,pct,income,bkCnt],mi%2===1);
     });
-    row.height = 16;
-  };
-
-  const addDataRow = (cols, isAlt) => {
-    const row = ws.getRow(rowIdx++);
-    cols.forEach((v, i) => {
-      const c = row.getCell(i + 1);
-      c.value  = v;
-      c.fill   = hexFill(isAlt ? COLOURS.altBg : COLOURS.vacantBg);
-      c.font   = hexFont('374151', { size: 10 });
-      c.border = thinBorder('E5E7EB');
-      if (typeof v === 'number' && i === 4) {
-        c.numFmt = '₱#,##0';
-        c.font   = hexFont('145C38', { bold: true, size: 10 });
-      }
-    });
-    row.height = 16;
-  };
-
-  addTitle('Hotel PMS — Export Summary');
-  rowIdx++; // spacer
-
-  const hotels = [{ key:'square', label:'Square Hotel' }, { key:'pool', label:'Pool Hotel' }];
-  for (const { key, label } of hotels) {
-    const hRow = ws.getRow(rowIdx++);
-    const hc   = hRow.getCell(1);
-    hc.value   = label;
-    hc.font    = hexFont('1A7A4A', { bold: true, size: 12 });
-    hRow.height = 18;
-
-    addHeader(['Month', 'Occupied Nights', 'Total Rooms', 'Occupancy %', 'Est. Income (₱)', 'Bookings']);
-    months.forEach(({ year, month }, mi) => {
-      const mLabel   = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-      const mStart   = startOfMonth(year, month);
-      const mEnd     = endOfMonth(year, month);
-      const rooms    = Object.keys(DB.hotels[key]?.rooms || {});
-      const days     = daysInMonth(year, month);
-      const totalSlots = rooms.length * days;
-
-      let occNights = 0;
-      for (const r of rooms) {
-        for (let d = 1; d <= days; d++) {
-          const date = new Date(year, month, d);
-          if (DB.bookings.some(b => b.hotel === key && b.room === r && isInRange(date, b.checkin, b.checkout))) {
-            occNights++;
-          }
-        }
-      }
-      const income = incomeForRange(key, mStart, mEnd);
-      const bkCount = DB.bookings.filter(b => {
-        if (b.hotel !== key) return false;
-        const ci = parseDate(b.checkin), co = parseDate(b.checkout);
-        return ci <= mEnd && co >= mStart;
-      }).length;
-      const pct = totalSlots > 0 ? (occNights / totalSlots * 100).toFixed(1) + '%' : '0%';
-      addDataRow([mLabel, occNights, rooms.length, pct, income, bkCount], mi % 2 === 1);
-    });
-    rowIdx++; // spacer
+    rowIdx++;
   }
 
-  // Rate table
-  addTitle('Room Rates (₱ per night)');
-  addHeader(['Type', 'Trip.com', 'Walk-in', 'Booking.com', 'Agoda', 'Expedia']);
-  const types = [['standard','Standard Room'],['family2','Family (2 pax)'],['family3','Family (3 pax)']];
-  types.forEach(([key, name], i) => {
-    const p = DB.prices[key] || {};
-    addDataRow([name, p.T||0, p.W||0, p.B||0, p.AG||0, p.EX||0], i % 2 === 1);
+  addTitle('Room Rates (₱/night)');
+  addHdr(['Type','Trip.com','Walk-in','Booking.com','Agoda','Expedia']);
+  [['standard','Standard Room'],['family2','Family (2 pax)'],['family3','Family (3 pax)']].forEach(([k,n],i)=>{
+    const p=DB.prices[k]||{};
+    addData([n,p.T||0,p.W||0,p.B||0,p.AG||0,p.EX||0],i%2===1);
   });
   rowIdx++;
-  addTitle('Add-on Rates (₱ per night)');
-  addDataRow(['Extra Head (per person)', DB.addons.extraHead||0], false);
-  addDataRow(['Extra Bed (per bed)', DB.addons.extraBed||0], true);
+  addTitle('Add-on Rates (₱/night)');
+  addData(['Extra Head',DB.addons.extraHead||0],false);
+  addData(['Extra Bed', DB.addons.extraBed||0],true);
 }
 
 // ─── EXPORT ENTRY POINT ───────────────────────────────────────────────────────
 async function exportToExcel() {
   toast('Preparing export…');
-  const ExcelJS = await loadExcelJS().catch(() => null);
-  if (!ExcelJS) { toast('Could not load ExcelJS — check your connection'); return; }
+  const ExcelJS=await loadExcelJS().catch(()=>null);
+  if(!ExcelJS){ toast('Could not load ExcelJS — check your internet connection'); return; }
 
-  const wb     = new ExcelJS.Workbook();
-  wb.creator   = 'Hotel PMS';
-  wb.created   = new Date();
-  wb.modified  = new Date();
+  const wb=new ExcelJS.Workbook();
+  wb.creator='Hotel PMS'; wb.created=new Date(); wb.modified=new Date();
 
-  const months = getExportMonths();
-  const hotels = ['square', 'pool'];
-
-  for (const { year, month } of months) {
-    for (const hotelKey of hotels) {
-      const hotel = DB.hotels[hotelKey];
-      if (!hotel) continue;
-      const rooms = Object.keys(hotel.rooms);
-      buildSheet(wb, hotelKey, hotel, rooms, year, month);
+  const months=getExportMonths();
+  for(const {year,month} of months){
+    for(const hotelKey of ['square','pool']){
+      const hotel=DB.hotels[hotelKey]; if(!hotel) continue;
+      buildSheet(wb,hotelKey,hotel,Object.keys(hotel.rooms),year,month);
     }
   }
+  buildSummarySheet(wb,months);
 
-  buildSummarySheet(wb, months);
-
-  // Write to buffer and trigger download
-  const buffer   = await wb.xlsx.writeBuffer();
-  const blob     = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url      = URL.createObjectURL(blob);
-  const a        = document.createElement('a');
-  a.href         = url;
-  a.download     = `HotelPMS_${new Date().toISOString().slice(0,10)}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  toast('✅ Excel exported with colours!');
+  const buffer=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`HotelPMS_${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  toast('✅ Excel exported with full colours!');
 }
 
-// ─── IMPORT (SheetJS — unchanged) ────────────────────────────────────────────
+// ─── IMPORT (SheetJS) ─────────────────────────────────────────────────────────
 async function importFromExcel(file) {
   toast('Reading file…');
-  const XLSX = await loadSheetJS().catch(() => null);
-  if (!XLSX) { toast('Could not load Excel library — check your connection'); return; }
+  const XLSX=await loadSheetJS().catch(()=>null);
+  if(!XLSX){ toast('Could not load import library — check your connection'); return; }
 
-  const arrayBuf = await file.arrayBuffer();
-  let wb;
-  try {
-    wb = XLSX.read(arrayBuf, { type: 'array', cellDates: true });
-  } catch(e) {
-    toast('❌ Could not read file — make sure it is a valid .xlsx');
-    return;
-  }
+  const arrayBuf=await file.arrayBuffer();
+  let wb2;
+  try { wb2=XLSX.read(arrayBuf,{type:'array',cellDates:true}); }
+  catch(e){ toast('❌ Could not read file — make sure it is a valid .xlsx'); return; }
 
-  let imported = 0, skipped = 0, errors = [];
+  let imported=0,skipped=0,errors=[];
 
-  for (const sheetName of wb.SheetNames) {
-    if (sheetName === 'Summary' || sheetName === 'HOW TO IMPORT') continue;
+  for(const sheetName of wb2.SheetNames){
+    if(['Summary','HOW TO IMPORT'].includes(sheetName)) continue;
+    const hotelKey=sheetName.toLowerCase().includes('pool')?'pool':'square';
+    const namePart=sheetName.replace(/-Pool$/i,'').trim();
+    const parsedDate=new Date(namePart+' 1');
+    if(isNaN(parsedDate)){ errors.push(`Unrecognised sheet: ${sheetName}`); continue; }
 
-    const hotelKey   = sheetName.toLowerCase().includes('pool') ? 'pool' : 'square';
-    const namePart   = sheetName.replace(/-Pool$/i, '').trim();
-    const parsedDate = new Date(namePart + ' 1');
-    if (isNaN(parsedDate)) { errors.push(`Unrecognised sheet: ${sheetName}`); continue; }
+    const year=parsedDate.getFullYear(), month=parsedDate.getMonth();
+    const days2=daysInMonth(year,month);
+    const ws=wb2.Sheets[sheetName];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    if(aoa.length<3) continue;
 
-    const year  = parsedDate.getFullYear();
-    const month = parsedDate.getMonth();
-    const days  = daysInMonth(year, month);
-    const ws    = wb.Sheets[sheetName];
-    const aoa   = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    if (aoa.length < 3) continue;
-
-    let headerRow = -1;
-    for (let r = 0; r < Math.min(5, aoa.length); r++) {
-      if (String(aoa[r][0]).toLowerCase().includes('room')) { headerRow = r; break; }
+    let headerRow=-1;
+    for(let r=0;r<Math.min(5,aoa.length);r++){
+      if(String(aoa[r][0]).toLowerCase().includes('room')){ headerRow=r; break; }
     }
-    if (headerRow === -1) { errors.push(`No header in ${sheetName}`); continue; }
+    if(headerRow===-1){ errors.push(`No header in ${sheetName}`); continue; }
 
-    const header     = aoa[headerRow];
-    const dateColMap = {};
-    for (let c = 2; c < header.length; c++) {
-      const match = String(header[c]).match(/(\d+)/);
-      if (match) dateColMap[c] = parseInt(match[1]);
+    const header=aoa[headerRow];
+    const dateColMap={};
+    for(let c=2;c<header.length;c++){
+      const match=String(header[c]).match(/(\d+)/);
+      if(match) dateColMap[c]=parseInt(match[1]);
     }
 
-    for (let r = headerRow + 1; r < aoa.length; r++) {
-      const row     = aoa[r];
-      const roomNum = String(row[0]).trim();
-      if (!roomNum || roomNum.toUpperCase() === 'TOTALS') continue;
-      if (!DB.hotels[hotelKey]?.rooms[roomNum]) continue;
+    for(let r=headerRow+1;r<aoa.length;r++){
+      const row=aoa[r];
+      const roomNum=String(row[0]).trim();
+      if(!roomNum||roomNum.toUpperCase()==='TOTALS') continue;
+      if(!DB.hotels[hotelKey]?.rooms[roomNum]) continue;
 
-      for (const [colStr, day] of Object.entries(dateColMap)) {
-        const col     = parseInt(colStr);
-        const cellVal = String(row[col] || '').trim()
-          .replace(/\s*\[EXT2?\]\s*/gi, '')
-          .replace(/\s*\[PAID\]\s*/gi, '')
-          .replace(/\s*\[PART\]\s*/gi, '')
-          .replace(/\s*\[2G\]\s*/gi, '')
-          .split('\n')[0]
+      for(const [colStr,day] of Object.entries(dateColMap)){
+        const col=parseInt(colStr);
+        const rawVal=String(row[col]||'').trim();
+        // Take first line (in case of multi-guest cell)
+        const cellVal=rawVal.split('\n')[0]
+          .replace(/\s*\[EXT2?\]\s*/gi,'')
+          .replace(/\s*\[PAID\]\s*/gi,'')
+          .replace(/\s*\[PART\]\s*/gi,'')
+          .replace(/\s*\[2G\]\s*/gi,'')
           .trim();
-        if (!cellVal || cellVal === 'MAINT') continue;
+        if(!cellVal||cellVal==='MAINT') continue;
 
-        const { source, guest, extraHead, extraBed } = parseCellValue(cellVal);
-        if (!guest) continue;
+        const {source,guest,extraHead,extraBed}=parseCellValue(cellVal);
+        if(!guest) continue;
 
-        const cellDate = new Date(year, month, day);
-        const existing = DB.bookings.find(b =>
-          b.hotel === hotelKey && b.room === roomNum &&
-          b.guest.toUpperCase() === guest.toUpperCase() &&
-          isInRange(cellDate, b.checkin, b.checkout)
+        const cellDate=new Date(year,month,day);
+        const existing=DB.bookings.find(b=>
+          b.hotel===hotelKey&&b.room===roomNum&&
+          b.guest.toUpperCase()===guest.toUpperCase()&&
+          isInRange(cellDate,b.checkin,b.checkout)
         );
-        if (existing) { skipped++; continue; }
+        if(existing){ skipped++; continue; }
 
-        let runStart = day, runEnd = day;
-        for (let d2 = day - 1; d2 >= 1; d2--) {
-          const c2 = Object.entries(dateColMap).find(([,v]) => v === d2)?.[0];
-          if (!c2) break;
-          const v2 = String(row[parseInt(c2)] || '').trim().replace(/\s*\[EXT2?\]\s*/gi,'').trim();
-          if (v2 && parseCellValue(v2).guest?.toUpperCase() === guest.toUpperCase()) runStart = d2;
-          else break;
+        let runStart=day,runEnd=day;
+        for(let d2=day-1;d2>=1;d2--){
+          const c2=Object.entries(dateColMap).find(([,v])=>v===d2)?.[0];
+          if(!c2) break;
+          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+          if(v2&&parseCellValue(v2).guest?.toUpperCase()===guest.toUpperCase()) runStart=d2; else break;
         }
-        for (let d2 = day + 1; d2 <= days; d2++) {
-          const c2 = Object.entries(dateColMap).find(([,v]) => v === d2)?.[0];
-          if (!c2) break;
-          const v2 = String(row[parseInt(c2)] || '').trim().replace(/\s*\[EXT2?\]\s*/gi,'').trim();
-          if (v2 && parseCellValue(v2).guest?.toUpperCase() === guest.toUpperCase()) runEnd = d2;
-          else break;
+        for(let d2=day+1;d2<=days2;d2++){
+          const c2=Object.entries(dateColMap).find(([,v])=>v===d2)?.[0];
+          if(!c2) break;
+          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+          if(v2&&parseCellValue(v2).guest?.toUpperCase()===guest.toUpperCase()) runEnd=d2; else break;
         }
-        if (runStart !== day) continue;
+        if(runStart!==day){ skipped++; continue; }
 
-        const checkin  = fmtDate(new Date(year, month, runStart));
-        const checkout = fmtDate(new Date(year, month, runEnd));
-        const dup = DB.bookings.find(b =>
-          b.hotel === hotelKey && b.room === roomNum &&
-          b.checkin === checkin && b.checkout === checkout &&
-          b.guest.toUpperCase() === guest.toUpperCase()
+        const checkin=fmtDate(new Date(year,month,runStart));
+        const checkout=fmtDate(new Date(year,month,runEnd));
+        const dup=DB.bookings.find(b=>
+          b.hotel===hotelKey&&b.room===roomNum&&
+          b.checkin===checkin&&b.checkout===checkout&&
+          b.guest.toUpperCase()===guest.toUpperCase()
         );
-        if (dup) { skipped++; continue; }
+        if(dup){ skipped++; continue; }
 
         DB.bookings.push({
-          id: genId(), hotel: hotelKey, room: roomNum,
-          guest: toTitleCase(guest), source, checkin, checkout,
-          notes: '', extraHead: extraHead||0, extraBed: extraBed||0,
-          extensions: [],
+          id:genId(),hotel:hotelKey,room:roomNum,
+          guest:toTitleCase(guest),source,checkin,checkout,
+          notes:'',extraHead:extraHead||0,extraBed:extraBed||0,
+          extensions:[],payments:[],
         });
         imported++;
       }
     }
   }
 
-  saveState();
-  renderAll();
-
-  let msg = `✅ Import done — ${imported} booking${imported!==1?'s':''} added`;
-  if (skipped) msg += `, ${skipped} duplicate${skipped!==1?'s':''} skipped`;
-  if (errors.length) msg += `. Warnings: ${errors.join('; ')}`;
+  saveState(); renderAll();
+  let msg=`✅ Import done — ${imported} booking${imported!==1?'s':''} added`;
+  if(skipped) msg+=`, ${skipped} duplicate${skipped!==1?'s':''} skipped`;
+  if(errors.length) msg+=`. Warnings: ${errors.join('; ')}`;
   toast(msg);
   closeModal('importExportModal');
 }
 
 // ─── CELL PARSER ─────────────────────────────────────────────────────────────
 function parseCellValue(raw) {
-  let source = 'W', guest = '', extraHead = 0, extraBed = 0;
-  let str    = raw.replace(/\s*\[EXT2?\]\s*/gi, '').trim();
-
-  const headMatch = str.match(/\+(\d+)H/i);
-  const bedMatch  = str.match(/\+(\d+)B/i);
-  if (headMatch) { extraHead = parseInt(headMatch[1]); str = str.replace(headMatch[0],'').trim(); }
-  if (bedMatch)  { extraBed  = parseInt(bedMatch[1]);  str = str.replace(bedMatch[0],'').trim(); }
-
-  const srcMap   = { T:'T', W:'W', B:'B', AG:'AG', AGB:'AG', EX:'EX', EXB:'EX', Ag:'AG', Ex:'EX' };
-  const srcMatch = str.match(/^([A-Za-z]+)\s*-\s*/);
-  if (srcMatch) {
-    const code = srcMatch[1].trim();
-    source = srcMap[code] || srcMap[code.toUpperCase()] || 'W';
-    str    = str.slice(srcMatch[0].length).trim();
-  }
-  str   = str.replace(/^\d+\s+/, '').trim();
-  guest = str.replace(/\s+/g, ' ').trim();
-  return { source, guest, extraHead, extraBed };
+  let source='W',guest='',extraHead=0,extraBed=0;
+  let str=raw.replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+  const hm=str.match(/\+(\d+)H/i); const bm=str.match(/\+(\d+)B/i);
+  if(hm){ extraHead=parseInt(hm[1]); str=str.replace(hm[0],'').trim(); }
+  if(bm){ extraBed =parseInt(bm[1]); str=str.replace(bm[0],'').trim(); }
+  const srcMap={T:'T',W:'W',B:'B',AG:'AG',AGB:'AG',EX:'EX',EXB:'EX',Ag:'AG',Ex:'EX'};
+  const sm=str.match(/^([A-Za-z]+)\s*-\s*/);
+  if(sm){ source=srcMap[sm[1]]||srcMap[sm[1].toUpperCase()]||'W'; str=str.slice(sm[0].length).trim(); }
+  str=str.replace(/^\d+\s+/,'').trim();
+  guest=str.replace(/\s+/g,' ').trim();
+  return {source,guest,extraHead,extraBed};
 }
 
 function toTitleCase(s) {
-  return s.toLowerCase().replace(/(?:^|\s|\/)\S/g, c => c.toUpperCase());
+  return s.toLowerCase().replace(/(?:^|\s|\/)\S/g,c=>c.toUpperCase());
 }
 
-// ─── UI HELPERS ───────────────────────────────────────────────────────────────
-function openImportExport()  { document.getElementById('importExportModal').style.display = 'flex'; }
+// ─── UI ───────────────────────────────────────────────────────────────────────
+function openImportExport()  { document.getElementById('importExportModal').style.display='flex'; }
 function triggerImportFile() { document.getElementById('importFileInput').click(); }
 function handleImportFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  input.value = '';
-  importFromExcel(file);
+  const file=input.files[0]; if(!file) return;
+  input.value=''; importFromExcel(file);
 }
