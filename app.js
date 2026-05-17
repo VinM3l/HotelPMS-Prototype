@@ -157,7 +157,24 @@ function getRoomStatus(hotel,room,date) {
   const r=DB.hotels[hotel].rooms[room];
   if(!r) return 'vacant';
   if(r.status==='maintenance') return 'maintenance';
-  return getBookingOnDate(hotel,room,date)?'occupied':'vacant';
+  const b=getBookingOnDate(hotel,room,date);
+  if(!b) return 'vacant';
+  // Checkout today → blue (same colour as vacant stripe, distinct bg)
+  if(fmtDate(date)===b.checkout) return 'checkout';
+  // Extended stay detection
+  const exts=b.extensions||[];
+  if(exts.length>0){
+    const origCo=parseDate(exts[0].originalCheckout||b.checkout);
+    const d0=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+    if(d0>origCo){
+      for(let ei=0;ei<exts.length;ei++){
+        const prevEnd=ei===0?origCo:parseDate(exts[ei-1].checkout);
+        const thisEnd=parseDate(exts[ei].checkout);
+        if(d0>prevEnd&&d0<=thisEnd){ return ei%2===0?'extended':'extended-alt'; }
+      }
+    }
+  }
+  return 'occupied';
 }
 
 // ─── INCOME CALCULATION ───────────────────────────────────────────────────────
@@ -227,8 +244,9 @@ function bookingAmountPaid(b) {
 function bookingPaymentStatus(b) {
   const paid = bookingAmountPaid(b);
   const due  = bookingTotalDue(b);
-  if (paid <= 0)   return 'none';
-  if (paid >= due) return 'full';
+  if (paid <= 0)        return 'none';
+  if (due > 0 && paid >= due) return 'full';
+  if (due <= 0 && paid > 0)   return 'full';  // free room, any payment = full
   return 'partial';
 }
 
@@ -438,7 +456,12 @@ function renderDashboard() {
       if(filterStatus==='no-deposit'){
         if(s!=='occupied') return false;
         const b=getBookingOnDate(h,r,currentDate); if(!b||hasKeyDeposit(b.id)) return false;
-      } else if(filterStatus!=='all'&&s!==filterStatus){ return false; }
+      } else if(filterStatus!=='all'){
+        // 'occupied' filter matches checkout + extended states too
+        const occupiedStates=['occupied','checkout','extended','extended-alt'];
+        if(filterStatus==='occupied'&&!occupiedStates.includes(s)) return false;
+        else if(filterStatus!=='occupied'&&s!==filterStatus) return false;
+      }
       if(searchQ){
         const q=searchQ.toLowerCase();
         if(r.toLowerCase().includes(q)) return true;
@@ -459,7 +482,7 @@ function renderDashboard() {
       const isCheckin=booking&&fmtDate(currentDate)===booking.checkin;
       const depositPaid=booking?hasKeyDeposit(booking.id):false;
       html+=`<div class="room-card ${status}" onclick="openRoom('${r}')">`;
-      if(status==='occupied'&&booking)
+      if((status==='occupied'||status==='checkout'||status==='extended'||status==='extended-alt')&&booking)
         html+=`<div class="key-dot ${depositPaid?'key-paid':'key-missing'}" title="${depositPaid?'Deposit paid':'No deposit'}">🔑</div>`;
       html+=`<div class="room-num">Room ${r}</div><div class="room-type-label">${room.label}</div>`;
       if(status==='maintenance'){
@@ -976,7 +999,7 @@ function deleteBooking(id) {
   if(!confirm('Delete this booking?')) return;
   DB.bookings=DB.bookings.filter(b=>b.id!==id);
   delete DB.keyDeposits[id];
-  saveState(); closeModal('bookingModal'); closeModal('roomModal'); renderAll(); toast('Booking deleted');
+  saveState(); closeModal('bookingModal'); closeModal('roomModal'); closeModal('extendModal'); renderAll(); toast('Booking deleted');
 }
 function closeBookingModal(e) { if(e.target===document.getElementById('bookingModal')) closeModal('bookingModal'); }
 
@@ -1276,7 +1299,7 @@ function renderAnalytics() {
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).style.display='none'; }
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal'].forEach(closeModal);
+  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal','extendModal','changePwModal','importExportModal'].forEach(id=>{const el=document.getElementById(id);if(el)closeModal(id);});
 });
 
 // ─── CHANGE PASSWORD (admin only) ────────────────────────────────────────────

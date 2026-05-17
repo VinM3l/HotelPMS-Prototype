@@ -245,7 +245,12 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
           totalNights++;
           const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
           const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
-          totalIncome+=br+ar;
+          // Apply discount: for a per-day estimate, divide full booking discount proportionally
+          const fullNights=Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
+          const fullGross=(br+ar)*fullNights;
+          const fullNet=applyDiscount(fullGross,booking);
+          const ratePerNight=fullNights>0?fullNet/fullNights:0;
+          totalIncome+=ratePerNight;
         }
       });
 
@@ -264,7 +269,7 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
     const pmtSummary=monthBookings.map(b=>{
       const paid=(b.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
       if(paid<=0) return null;
-      const due=(DB.prices[hotel.rooms[roomNum]?.type]||{})[b.source]||0;
+      const due=bookingTotalDue(b);
       return `${b.guest.split(' ')[0]}: ${paid>0?(paid>=due?'PAID':'PART ₱'+Math.round(paid).toLocaleString()):''}`;
     }).filter(Boolean).join('; ');
 
