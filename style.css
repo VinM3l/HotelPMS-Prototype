@@ -374,12 +374,12 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .room-card.maintenance::before   { background: #1c2128; }
 
 /* Card backgrounds & left border */
-.room-card.occupied      { background: #c6edd5; border-left-color: #7dc4a0; }
-.room-card.checkout      { background: #dbeafe; border-left-color: #93c5fd; }
+.room-card.occupied      { background: #edf9f2; border-left-color: #1a7a4a; }
+.room-card.checkout      { background: #eff6ff; border-left-color: var(--blue); }
 .room-card.vacant        { background: #ffffff; border-left-color: rgba(26,122,74,0.2); }
-.room-card.extended      { background: #fef9c3; border-left-color: #fde047; }
-.room-card.extended-alt  { background: #dcfce7; border-left-color: #86efac; }
-.room-card.maintenance   { background: #f3f4f6; border-left-color: #d1d5db; }
+.room-card.extended      { background: #fffde7; border-left-color: var(--amber); }
+.room-card.extended-alt  { background: #f0faf3; border-left-color: #16a34a; }
+.room-card.maintenance   { background: #f9fafb; border-left-color: #6b7280; }
 
 /* Text adjustments per state */
 .room-card.occupied .room-num,
