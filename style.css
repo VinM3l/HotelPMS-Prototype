@@ -366,7 +366,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 }
 /* ── Room card state colours ───────────────────────────────────────────────── */
 /* Stripe (top bar) */
-.room-card.occupied::before      { background: #1a7a4a; }
+.room-card.occupied::before      { background: #0d3d22; }
 .room-card.checkout::before      { background: var(--blue); }
 .room-card.vacant::before        { background: var(--blue); }
 .room-card.extended::before      { background: var(--amber); }
@@ -374,23 +374,34 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .room-card.maintenance::before   { background: #1c2128; }
 
 /* Card backgrounds & left border */
-.room-card.occupied      { background: #edf9f2; border-left-color: #1a7a4a; }
-.room-card.checkout      { background: #eff6ff; border-left-color: var(--blue); }
+.room-card.occupied      { background: #1a7a4a; border-left-color: #0d3d22; }
+.room-card.checkout      { background: #1d4ed8; border-left-color: #1e3a8a; }
 .room-card.vacant        { background: #ffffff; border-left-color: rgba(26,122,74,0.2); }
-.room-card.extended      { background: #fffde7; border-left-color: var(--amber); }
-.room-card.extended-alt  { background: #f0faf3; border-left-color: #16a34a; }
-.room-card.maintenance   { background: #f9fafb; border-left-color: #6b7280; }
+.room-card.extended      { background: #d97706; border-left-color: #92400e; }
+.room-card.extended-alt  { background: #15803d; border-left-color: #14532d; }
+.room-card.maintenance   { background: #374151; border-left-color: #1c2128; }
 
 /* Text adjustments per state */
 .room-card.occupied .room-num,
-.room-card.occupied .room-guest   { color: #0d3d22; }
+.room-card.occupied .room-guest,
+.room-card.occupied .room-type-label,
+.room-card.occupied .room-meta    { color: #ffffff; }
 .room-card.checkout .room-num,
-.room-card.checkout .room-guest   { color: #1e3a8a; }
+.room-card.checkout .room-guest,
+.room-card.checkout .room-type-label,
+.room-card.checkout .room-meta    { color: #ffffff; }
 .room-card.extended .room-num,
-.room-card.extended .room-guest   { color: #713f12; }
+.room-card.extended .room-guest,
+.room-card.extended .room-type-label,
+.room-card.extended .room-meta    { color: #ffffff; }
 .room-card.extended-alt .room-num,
-.room-card.extended-alt .room-guest { color: #14532d; }
-.room-card.maintenance .room-num  { color: #374151; }
+.room-card.extended-alt .room-guest,
+.room-card.extended-alt .room-type-label,
+.room-card.extended-alt .room-meta { color: #ffffff; }
+.room-card.maintenance .room-num,
+.room-card.maintenance .room-guest,
+.room-card.maintenance .room-type-label,
+.room-card.maintenance .room-meta  { color: #ffffff; }
 
 .room-card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
