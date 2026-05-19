@@ -436,8 +436,9 @@ function renderDashboard() {
   let occ=0,vac=0,maint=0,noDeposit=0;
   roomNums.forEach(r=>{
     const s=getRoomStatus(h,r,currentDate);
-    if(s==='occupied'){ occ++; } else if(s==='vacant'){ vac++; } else { maint++; }
-    if(s==='occupied'){ const b=getBookingOnDate(h,r,currentDate); if(b&&!hasKeyDeposit(b.id)) noDeposit++; }
+    const isOcc=['occupied','checkout','extended','extended-alt'].includes(s);
+    if(isOcc){ occ++; } else if(s==='vacant'){ vac++; } else { maint++; }
+    if(isOcc){ const b=getBookingOnDate(h,r,currentDate); if(b&&!hasKeyDeposit(b.id)) noDeposit++; }
   });
   const total=roomNums.length, pct=total>0?Math.round(occ/total*100):0;
 
@@ -454,7 +455,8 @@ function renderDashboard() {
     const filtered=rooms.filter(r=>{
       const s=getRoomStatus(h,r,currentDate);
       if(filterStatus==='no-deposit'){
-        if(s!=='occupied') return false;
+        const occStates=['occupied','checkout','extended','extended-alt'];
+        if(!occStates.includes(s)) return false;
         const b=getBookingOnDate(h,r,currentDate); if(!b||hasKeyDeposit(b.id)) return false;
       } else if(filterStatus!=='all'){
         // 'occupied' filter matches checkout + extended states too
