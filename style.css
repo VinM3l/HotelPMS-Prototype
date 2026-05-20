@@ -367,7 +367,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 /* ── Room card state colours ───────────────────────────────────────────────── */
 /* Stripe (top bar) */
 .room-card.occupied::before      { background: #0d3d22; }
-.room-card.checkout::before      { background: var(--blue); }
+/* checkout stripe: see paid-today section below */
 .room-card.vacant::before        { background: var(--blue); }
 .room-card.extended::before      { background: var(--amber); }
 .room-card.extended-alt::before  { background: #16a34a; }
@@ -375,7 +375,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 
 /* Card backgrounds & left border */
 .room-card.occupied      { background: #1a7a4a; border-left-color: #0d3d22; }
-.room-card.checkout      { background: #1d4ed8; border-left-color: #1e3a8a; }
+/* checkout bg: see paid-today section below */
 .room-card.vacant        { background: #ffffff; border-left-color: rgba(26,122,74,0.2); }
 .room-card.extended      { background: #d97706; border-left-color: #92400e; }
 .room-card.extended-alt  { background: #15803d; border-left-color: #14532d; }
@@ -386,10 +386,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .room-card.occupied .room-guest,
 .room-card.occupied .room-type-label,
 .room-card.occupied .room-meta    { color: #ffffff; }
-.room-card.checkout .room-num,
-.room-card.checkout .room-guest,
-.room-card.checkout .room-type-label,
-.room-card.checkout .room-meta    { color: #ffffff; }
+/* checkout text: see paid-today section below */
 .room-card.extended .room-num,
 .room-card.extended .room-guest,
 .room-card.extended .room-type-label,
@@ -552,10 +549,65 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .cal-day  { min-height: 52px; border-radius: var(--radius-sm); border: 1px solid var(--border); padding: 4px; background: var(--surface); transition: border-color 0.1s; }
 .cal-day.other       { opacity: 0.3; }
 .cal-day.is-today    { border-color: var(--green); border-width: 2px; }
-.cal-day.has-booking { background: var(--green-light); border-color: var(--green-border); }
-.cal-day.checkin-day  { background: #d1fae5 !important; border-color: #6ee7b7 !important; }
-.cal-day.checkout-day { background: #fee2e2 !important; border-color: #fca5a5 !important; }
+/* Calendar day states — mirrors card colours */
+.cal-day.cal-occupied         { background: #1a7a4a; border-color: #0d3d22; }
+.cal-day.cal-occupied .cal-day-num         { color: #ffffff; }
+
+.cal-day.cal-checkin          { background: #1a7a4a; border-color: #0d3d22; border-width: 2px; }
+.cal-day.cal-checkin .cal-day-num          { color: #ffffff; }
+.cal-day.cal-checkin::after   { content:'IN'; position:absolute; top:3px; right:4px; font-size:8px; font-weight:700; color:#86efac; }
+
+.cal-day.cal-checkout-day     { background: #1d4ed8; border-color: #1e3a8a; }
+.cal-day.cal-checkout-day .cal-day-num     { color: #ffffff; }
+.cal-day.cal-checkout-day::after { content:'OUT'; position:absolute; top:3px; right:4px; font-size:8px; font-weight:700; color:#bfdbfe; }
+
+.cal-day.cal-extended         { background: #d97706; border-color: #92400e; }
+.cal-day.cal-extended .cal-day-num         { color: #ffffff; }
+
+.cal-day.cal-extended-alt     { background: #15803d; border-color: #14532d; }
+.cal-day.cal-extended-alt .cal-day-num     { color: #ffffff; }
+
+.cal-day.cal-invalid-checkout { background: #dc2626; border-color: #7f1d1d; }
+.cal-day.cal-invalid-checkout .cal-day-num { color: #ffffff; }
+
+/* Booking chip: always black text, white bg so it's readable on any day colour */
+.cal-booking-chip { color: #111 !important; background: rgba(255,255,255,0.85) !important; }
 .cal-day-num { font-size: 11px; font-weight: 600; color: var(--text2); }
+.cal-day.has-payment { background: #bfdbfe !important; border-color: #1d4ed8 !important; border-width: 2px !important; }
+
+/* Card: payment was recorded on the current dashboard date — mid blue, white text */
+.room-card.paid-today                { background: #60a5fa !important; border-left-color: #2563eb !important; }
+.room-card.paid-today::before        { background: #2563eb !important; }
+.room-card.paid-today .room-num,
+.room-card.paid-today .room-guest,
+.room-card.paid-today .room-type-label,
+.room-card.paid-today .room-meta     { color: #ffffff !important; }
+
+/* Checkout state — dark blue, white text (manually marked) */
+.room-card.checkout::before      { background: #1e3a8a; }
+.room-card.checkout              { background: #1d4ed8; border-left-color: #1e3a8a; }
+.room-card.checkout .room-num,
+.room-card.checkout .room-guest,
+.room-card.checkout .room-type-label,
+.room-card.checkout .room-meta   { color: #ffffff; }
+
+/* Invalid checkout — red */
+.room-card.invalid-checkout::before        { background: #7f1d1d; }
+.room-card.invalid-checkout                { background: #dc2626; border-left-color: #7f1d1d; }
+.room-card.invalid-checkout .room-num,
+.room-card.invalid-checkout .room-guest,
+.room-card.invalid-checkout .room-type-label,
+.room-card.invalid-checkout .room-meta     { color: #ffffff; }
+
+/* Guest panel action buttons */
+.guest-action-btn.action-checkout { background: #1d4ed8; color: #fff; border-color: #1e3a8a; }
+.guest-action-btn.action-checkout:hover { background: #1e3a8a; }
+.guest-action-btn.action-invalid  { background: #dc2626; color: #fff; border-color: #7f1d1d; }
+.guest-action-btn.action-invalid:hover  { background: #b91c1c; }
+.guest-action-btn.action-undo     { background: var(--surface2); color: var(--text2); border-color: var(--border2); }
+.guest-action-btn.action-undo:hover { background: var(--border); }
+
+.cal-pmt-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); margin: 2px auto 0; }
 .cal-booking-chip { font-size: 9px; margin-top: 2px; padding: 1px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
 
 /* ─── FORMS ──────────────────────────────────────────────────────────────────── */

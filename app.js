@@ -114,7 +114,7 @@ DB.bookings.forEach(b => {
 function dateStr(d) { return d.toLocaleDateString('en-PH',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
 function shortDate(s) { return new Date(s+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric'}); }
 function parseDate(s) { return new Date(s+'T00:00:00'); }
-function fmtDate(d)   { return d.toISOString().slice(0,10); }
+function fmtDate(d)   { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function sameDay(a,b) { return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
 function isInRange(d,ci,co) {
   const ds=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
@@ -159,8 +159,9 @@ function getRoomStatus(hotel,room,date) {
   if(r.status==='maintenance') return 'maintenance';
   const b=getBookingOnDate(hotel,room,date);
   if(!b) return 'vacant';
-  // Checkout today → blue (same colour as vacant stripe, distinct bg)
-  if(fmtDate(date)===b.checkout) return 'checkout';
+  // Manual checkout flags (staff must mark)
+  if(b.invalidCheckout) return 'invalid-checkout';
+  if(b.checkedOut)      return 'checkout';
   // Extended stay detection
   const exts=b.extensions||[];
   if(exts.length>0){
@@ -282,17 +283,37 @@ function toggleDepositUI(id,val) {
   toast(val?'🔑 Key deposit marked as paid':'Key deposit cleared');
 }
 
+function markCheckedOut(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  if(b.invalidCheckout){ toast('Cannot mark checkout — already marked invalid'); return; }
+  b.checkedOut=true; b.invalidCheckout=false;
+  saveState(); renderAll(); toast('✅ Marked as checked out');
+}
+function markInvalidCheckout(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  b.invalidCheckout=true; b.checkedOut=false;
+  saveState(); renderAll(); toast('🔴 Marked as invalid checkout');
+}
+function clearCheckoutFlag(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  b.checkedOut=false; b.invalidCheckout=false;
+  saveState(); renderAll(); toast('Checkout flag cleared');
+}
+
 function addPayment(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
   const amtEl =document.getElementById(`pmt-amt-${id}`);
   const noteEl=document.getElementById(`pmt-note-${id}`);
   const amt   =parseFloat(amtEl?.value)||0;
   if(amt<=0){ toast('Enter an amount greater than 0'); amtEl?.focus(); return; }
+  const dateEl=document.getElementById(`pmt-date-${id}`);
+  const pmtDate=dateEl?.value||fmtDate(currentDate);
   const note=noteEl?.value.trim()||'Payment';
   if(!b.payments) b.payments=[];
-  b.payments.push({ amount:amt, date:fmtDate(currentDate), note });
+  b.payments.push({ amount:amt, date:pmtDate, note });
   saveState();
   renderRoomGuest();
+  if(activeRoom) renderRoomCalendar();
   renderDashboard();
   if(currentPage==='bookings') renderBookingsPage();
   const status=bookingPaymentStatus(b);
@@ -305,6 +326,7 @@ function removePayment(id,idx) {
   b.payments.splice(idx,1);
   saveState();
   renderRoomGuest();
+  if(activeRoom) renderRoomCalendar();
   renderDashboard();
   if(currentPage==='bookings') renderBookingsPage();
   toast('Payment entry removed');
@@ -436,7 +458,7 @@ function renderDashboard() {
   let occ=0,vac=0,maint=0,noDeposit=0;
   roomNums.forEach(r=>{
     const s=getRoomStatus(h,r,currentDate);
-    const isOcc=['occupied','checkout','extended','extended-alt'].includes(s);
+    const isOcc=['occupied','checkout','invalid-checkout','extended','extended-alt'].includes(s);
     if(isOcc){ occ++; } else if(s==='vacant'){ vac++; } else { maint++; }
     if(isOcc){ const b=getBookingOnDate(h,r,currentDate); if(b&&!hasKeyDeposit(b.id)) noDeposit++; }
   });
@@ -455,12 +477,12 @@ function renderDashboard() {
     const filtered=rooms.filter(r=>{
       const s=getRoomStatus(h,r,currentDate);
       if(filterStatus==='no-deposit'){
-        const occStates=['occupied','checkout','extended','extended-alt'];
+        const occStates=['occupied','checkout','invalid-checkout','extended','extended-alt'];
         if(!occStates.includes(s)) return false;
         const b=getBookingOnDate(h,r,currentDate); if(!b||hasKeyDeposit(b.id)) return false;
       } else if(filterStatus!=='all'){
         // 'occupied' filter matches checkout + extended states too
-        const occupiedStates=['occupied','checkout','extended','extended-alt'];
+        const occupiedStates=['occupied','checkout','invalid-checkout','extended','extended-alt'];
         if(filterStatus==='occupied'&&!occupiedStates.includes(s)) return false;
         else if(filterStatus!=='occupied'&&s!==filterStatus) return false;
       }
@@ -483,8 +505,11 @@ function renderDashboard() {
       const isCheckout=booking&&fmtDate(currentDate)===booking.checkout;
       const isCheckin=booking&&fmtDate(currentDate)===booking.checkin;
       const depositPaid=booking?hasKeyDeposit(booking.id):false;
-      html+=`<div class="room-card ${status}" onclick="openRoom('${r}')">`;
-      if((status==='occupied'||status==='checkout'||status==='extended'||status==='extended-alt')&&booking)
+      const todayStr=fmtDate(currentDate);
+      const paidToday=booking&&(booking.payments||[]).some(p=>p.date===todayStr);
+      const pmtClass=paidToday?' paid-today':'';
+      html+=`<div class="room-card ${status}${pmtClass}" onclick="openRoom('${r}')">`;
+      if((status==='occupied'||status==='checkout'||status==='invalid-checkout'||status==='extended'||status==='extended-alt')&&booking)
         html+=`<div class="key-dot ${depositPaid?'key-paid':'key-missing'}" title="${depositPaid?'Deposit paid':'No deposit'}">🔑</div>`;
       html+=`<div class="room-num">Room ${r}</div><div class="room-type-label">${room.label}</div>`;
       if(status==='maintenance'){
@@ -609,6 +634,7 @@ function renderRoomGuest() {
         <div class="payment-add-row">
           <input class="form-input payment-amount-input" type="number" min="0" step="50"
                  placeholder="${peso(balance||amtDue)}" id="pmt-amt-${b.id}">
+          <input class="form-input" type="date" id="pmt-date-${b.id}" value="${fmtDate(currentDate)}">
           <input class="form-input" type="text" placeholder="Note (optional)" id="pmt-note-${b.id}">
           <button class="btn btn-primary" style="flex-shrink:0;font-size:12px;padding:7px 12px"
                   onclick="addPayment('${b.id}')">Add</button>
@@ -622,6 +648,20 @@ function renderRoomGuest() {
         <button class="guest-action-btn action-yellow" onclick="openExtendStay('${b.id}')">
           ⟳ Extend stay
         </button>
+        ${!b.checkedOut&&!b.invalidCheckout?`
+        <button class="guest-action-btn action-checkout" onclick="markCheckedOut('${b.id}')">
+          🚪 Mark checked out
+        </button>
+        <button class="guest-action-btn action-invalid" onclick="markInvalidCheckout('${b.id}')">
+          🔴 Invalid checkout
+        </button>`:b.checkedOut?`
+        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
+          ↩ Undo checkout
+        </button>`:b.invalidCheckout?`
+        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
+          ↩ Undo invalid checkout
+        </button>`:''}
+
         <button class="guest-action-btn action-edit" onclick="editBooking('${b.id}')">
           ✎ Edit booking
         </button>
@@ -672,18 +712,46 @@ function renderRoomCalendar() {
   for(let i=0;i<firstDay;i++)
     cal+=`<div class="cal-day other"><div class="cal-day-num">${prevDays-firstDay+1+i}</div></div>`;
 
+  // Collect all payment dates for this room
+  const paymentDates=new Set();
+  roomBookings.forEach(b=>(b.payments||[]).forEach(p=>{ if(p.date) paymentDates.add(p.date); }));
+
   for(let d=1;d<=daysInMonth;d++){
     const date=new Date(y,m,d);
+    const ds=fmtDate(date);
     const isToday=sameDay(date,TODAY);
     const booking=roomBookings.find(b=>isInRange(date,b.checkin,b.checkout));
-    const isCheckin=booking&&fmtDate(date)===booking.checkin;
-    const isCheckout=booking&&fmtDate(date)===booking.checkout;
+    const isCheckin=booking&&ds===booking.checkin;
+    const isCheckout=booking&&ds===booking.checkout;
+    const hasPmt=paymentDates.has(ds);
     let cls='cal-day';
-    if(isCheckin) cls+=' checkin-day'; else if(isCheckout) cls+=' checkout-day'; else if(booking) cls+=' has-booking';
+    if(booking){
+      // Determine state for this day (mirrors getRoomStatus logic)
+      const exts=booking.extensions||[];
+      let dayState='occupied';
+      if(booking.invalidCheckout) dayState='invalid-checkout';
+      else if(booking.checkedOut)  dayState='checkout';
+      else if(exts.length>0){
+        const origCo=parseDate(exts[0].originalCheckout||booking.checkout);
+        const d0=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+        if(d0>origCo){
+          for(let ei=0;ei<exts.length;ei++){
+            const prevEnd=ei===0?origCo:parseDate(exts[ei-1].checkout);
+            const thisEnd=parseDate(exts[ei].checkout);
+            if(d0>prevEnd&&d0<=thisEnd){ dayState=ei%2===0?'extended':'extended-alt'; break; }
+          }
+        }
+      }
+      if(isCheckin)       cls+=' cal-checkin';
+      else if(isCheckout) cls+=' cal-checkout-day';
+      else                cls+=' cal-'+dayState;
+    }
+    if(hasPmt) cls+=' has-payment';
     if(isToday) cls+=' is-today';
     cal+=`<div class="${cls}">
       <div class="cal-day-num">${d}</div>
       ${booking?`<div class="cal-booking-chip src-${booking.source}">${booking.guest.split(' ')[0]}</div>`:''}
+      ${hasPmt?`<div class="cal-pmt-dot"></div>`:''}
     </div>`;
   }
   const rem=(firstDay+daysInMonth)%7;
