@@ -19,25 +19,29 @@ function loadScript(url, windowKey) {
 const loadExcelJS = () => loadScript(EXCELJS_CDN, 'ExcelJS');
 const loadSheetJS = () => loadScript(SHEETJS_CDN, 'XLSX');
 
-// ─── COLOUR PALETTE ───────────────────────────────────────────────────────────
+// ─── COLOUR PALETTE — matches dashboard card colours ─────────────────────────
 const C = {
   headerBg:       '1A7A4A', headerFg:    'FFFFFF',
   titleFg:        '1A7A4A', titleBg:     'E8F5EE',
-  // Occupied — darker pastel green
-  occBg:          'C6EDD5', occFg:       '145C38', occBorder:  '7DC4A0',
-  // Fully paid — even darker green + bold
-  occFullBg:      'A8D5B8', occFullFg:   '0D3D22', occFullBorder: '5AAF84',
-  // Partial payment — pastel blue
-  occPartBg:      'DBEAFE', occPartFg:   '1E3A8A', occPartBorder: '93C5FD',
-  // Multi-guest shades
-  multiBg:        'B8E8CC', multiFg:     '0D3D22', multiBorder: '5AAF84',
-  multiFullBg:    'A0D4B4', multiFullFg: '0A2E19', multiFullBorder: '4A9E72',
-  multiPartBg:    'BFDBFE', multiPartFg: '1E3A8A', multiPartBorder: '60A5FA',
-  // Extended stays
-  extBg:          'FEF9C3', extFg:       '713F12', extBorder:  'FDE047',
-  ext2Bg:         'DCFCE7', ext2Fg:      '14532D', ext2Border: '86EFAC',
-  // Maintenance
-  maintBg:        'F3F4F6', maintFg:     '4B5563',
+  // Occupied — dark green, white text
+  occBg:          '1A7A4A', occFg:       'FFFFFF', occBorder:  '0D3D22',
+  // Paid today — medium blue, white text
+  occFullBg:      '60A5FA', occFullFg:   'FFFFFF', occFullBorder: '2563EB',
+  // Partial payment — medium blue (same, lighter distinction in notes)
+  occPartBg:      '60A5FA', occPartFg:   'FFFFFF', occPartBorder: '2563EB',
+  // Multi-guest: same dark green base
+  multiBg:        '1A7A4A', multiFg:     'FFFFFF', multiBorder: '0D3D22',
+  multiFullBg:    '60A5FA', multiFullFg: 'FFFFFF', multiFullBorder: '2563EB',
+  multiPartBg:    '60A5FA', multiPartFg: 'FFFFFF', multiPartBorder: '2563EB',
+  // Extended stays — amber + white / deeper green + white
+  extBg:          'D97706', extFg:       'FFFFFF', extBorder:  '92400E',
+  ext2Bg:         '15803D', ext2Fg:      'FFFFFF', ext2Border: '14532D',
+  // Checkout — dark blue, white text
+  checkoutBg:     '1D4ED8', checkoutFg:  'FFFFFF', checkoutBorder: '1E3A8A',
+  // Invalid checkout — red, white text
+  invalidBg:      'DC2626', invalidFg:   'FFFFFF', invalidBorder:  '7F1D1D',
+  // Maintenance — dark grey, white text
+  maintBg:        '374151', maintFg:     'FFFFFF',
   // Vacant — white
   vacantBg:       'FFFFFF', vacantFg:    '9CA3AF',
   altBg:          'F9FAFB',
@@ -60,15 +64,17 @@ function applyHeader(cell) {
 function applyCell(cell, type, isAlt) {
   const vBg = isAlt ? C.altBg : C.vacantBg;
   const map = {
-    occupied:     { bg:C.occBg,      fg:C.occFg,      bd:C.occBorder,      bold:false },
-    'occ-full':   { bg:C.occFullBg,  fg:C.occFullFg,  bd:C.occFullBorder,  bold:true  },
-    'occ-partial':{ bg:C.occPartBg,  fg:C.occPartFg,  bd:C.occPartBorder,  bold:false },
-    multi:        { bg:C.multiBg,    fg:C.multiFg,    bd:C.multiBorder,    bold:false },
-    'multi-full': { bg:C.multiFullBg,fg:C.multiFullFg,bd:C.multiFullBorder,bold:true  },
-    'multi-part': { bg:C.multiPartBg,fg:C.multiPartFg,bd:C.multiPartBorder,bold:false },
-    ext:          { bg:C.extBg,      fg:C.extFg,      bd:C.extBorder,      bold:true  },
-    ext2:         { bg:C.ext2Bg,     fg:C.ext2Fg,     bd:C.ext2Border,     bold:true  },
-    maint:        { bg:C.maintBg,    fg:C.maintFg,    bd:'D1D5DB',         bold:false, italic:true },
+    occupied:          { bg:C.occBg,       fg:C.occFg,       bd:C.occBorder,       bold:false },
+    'occ-full':        { bg:C.occFullBg,   fg:C.occFullFg,   bd:C.occFullBorder,   bold:true  },
+    'occ-partial':     { bg:C.occPartBg,   fg:C.occPartFg,   bd:C.occPartBorder,   bold:false },
+    multi:             { bg:C.multiBg,     fg:C.multiFg,     bd:C.multiBorder,     bold:false },
+    'multi-full':      { bg:C.multiFullBg, fg:C.multiFullFg, bd:C.multiFullBorder, bold:true  },
+    'multi-part':      { bg:C.multiPartBg, fg:C.multiPartFg, bd:C.multiPartBorder, bold:false },
+    ext:               { bg:C.extBg,       fg:C.extFg,       bd:C.extBorder,       bold:true  },
+    ext2:              { bg:C.ext2Bg,      fg:C.ext2Fg,      bd:C.ext2Border,      bold:true  },
+    checkout:          { bg:C.checkoutBg,  fg:C.checkoutFg,  bd:C.checkoutBorder,  bold:true  },
+    'invalid-checkout':{ bg:C.invalidBg,   fg:C.invalidFg,   bd:C.invalidBorder,   bold:true  },
+    maint:             { bg:C.maintBg,     fg:C.maintFg,     bd:'1C2128',          bold:false, italic:true },
   };
   const s = map[type];
   if (s) {
@@ -108,7 +114,7 @@ function getCellPaymentType(booking) {
   const roomDef = DB.hotels[booking.hotel]?.rooms[booking.room];
   if (!roomDef) return 'occupied';
   const br = (DB.prices[roomDef.type]||{})[booking.source]||0;
-  const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
+  const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
   const n  = Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
   const due = applyDiscount((br+ar)*n, booking);
   if (paid <= 0)   return 'occupied';
@@ -214,9 +220,15 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
         if(booking.extraHead>0) txt+=` +${booking.extraHead}H`;
         if(booking.extraBed>0)  txt+=` +${booking.extraBed}B`;
 
-        // Extension detection
+        // Checkout / invalid-checkout flags (manual, primary booking only)
+        if(bi===0){
+          if(booking.invalidCheckout) cellType='invalid-checkout';
+          else if(booking.checkedOut) cellType='checkout';
+        }
+
+        // Extension detection (overrides occupied, not checkout/invalid)
         const exts=booking.extensions||[];
-        if(exts.length>0){
+        if(exts.length>0&&cellType==='occupied'){
           const origCo=parseDate(exts[0].originalCheckout||booking.checkout);
           const d0=new Date(date.getFullYear(),date.getMonth(),date.getDate());
           if(d0>origCo){
@@ -232,19 +244,21 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
           }
         }
 
-        // Payment colour on primary booking
-        if(bi===0&&(cellType==='occupied')){
+        // Payment colour — only on occupied/multi, not checkout/invalid/ext
+        if(bi===0&&cellType==='occupied'){
+          const ds=fmtDate(date);
+          const paidToday=(booking.payments||[]).some(p=>p.date===ds);
           const pmtType=getCellPaymentType(booking);
-          if(pmtType==='full')    cellType=isMulti?'multi-full':'occ-full';
+          if(paidToday)                cellType=isMulti?'multi-full':'occ-full';
           else if(pmtType==='partial') cellType=isMulti?'multi-part':'occ-partial';
-          else if(isMulti)        cellType='multi';
+          else if(isMulti)             cellType='multi';
         }
 
         lines.push(txt);
         if(bi===0){
           totalNights++;
           const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
-          const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0);
+          const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
           // Apply discount: for a per-day estimate, divide full booking discount proportionally
           const fullNights=Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
           const fullGross=(br+ar)*fullNights;
@@ -348,7 +362,7 @@ function buildSummarySheet(wb, months) {
         const rd=DB.hotels[key]?.rooms[b.room];
         if(!rd) return s;
         const br=(DB.prices[rd.type]||{})[b.source]||0;
-        const ar=(b.extraHead||0)*(DB.addons.extraHead||0)+(b.extraBed||0)*(DB.addons.extraBed||0);
+        const ar=(b.extraHead||0)*(DB.addons.extraHead||0)+(b.extraBed||0)*(DB.addons.extraBed||0)+(b.breakfast||0)*(DB.addons.breakfast||0);
         return s+applyDiscount((br+ar)*n,b);
       },0);
       const bkCnt=DB.bookings.filter(b=>{ if(b.hotel!==key) return false;
@@ -367,8 +381,9 @@ function buildSummarySheet(wb, months) {
   });
   rowIdx++;
   addTitle('Add-on Rates (₱/night)');
-  addData(['Extra Head',DB.addons.extraHead||0],false);
-  addData(['Extra Bed', DB.addons.extraBed||0],true);
+  addData(['Extra Head', DB.addons.extraHead||0],false);
+  addData(['Extra Bed',  DB.addons.extraBed||0],true);
+  addData(['Breakfast',  DB.addons.breakfast||0],false);
 }
 
 // ─── EXPORT ENTRY POINT ───────────────────────────────────────────────────────

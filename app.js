@@ -95,11 +95,13 @@ const DEFAULT_DB = {
 
 let DB = loadState() || JSON.parse(JSON.stringify(DEFAULT_DB));
 if (!DB.keyDeposits) DB.keyDeposits = {};
-if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500 };
+if (!DB.addons) DB.addons = { extraHead: 350, extraBed: 500, breakfast: 150 };
+if (DB.addons.breakfast === undefined) DB.addons.breakfast = 150;
 // migrate old bookings missing fields
 DB.bookings.forEach(b => {
   if (b.extraHead     === undefined) b.extraHead     = 0;
   if (b.extraBed      === undefined) b.extraBed      = 0;
+  if (b.breakfast     === undefined) b.breakfast     = 0;
   if (b.discountType  === undefined) b.discountType  = 'none';
   if (b.discountValue === undefined) b.discountValue = 0;
   if (b.discountNote  === undefined) b.discountNote  = '';
@@ -195,7 +197,8 @@ function bookingIncomeInRange(b, from, to) {
   if (!roomDef) return 0;
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0) * (DB.addons.extraHead||0)
-                  + (b.extraBed||0)  * (DB.addons.extraBed||0);
+                  + (b.extraBed||0)  * (DB.addons.extraBed||0)
+                  + (b.breakfast||0) * (DB.addons.breakfast||0);
   const gross = (baseRate + addonRate) * nights;
   return applyDiscount(gross, b);
 }
@@ -221,7 +224,8 @@ function bookingDiscountAmount(b) {
   const nights = Math.round((co - ci) / 864e5) + 1;
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0) * (DB.addons.extraHead||0)
-                  + (b.extraBed||0)  * (DB.addons.extraBed||0);
+                  + (b.extraBed||0)  * (DB.addons.extraBed||0)
+                  + (b.breakfast||0) * (DB.addons.breakfast||0);
   const gross = (baseRate + addonRate) * nights;
   return gross - applyDiscount(gross, b);
 }
@@ -234,7 +238,8 @@ function bookingTotalDue(b) {
   const nights = Math.round((co - ci) / 864e5) + 1;
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0)*(DB.addons.extraHead||0)
-                  + (b.extraBed||0)*(DB.addons.extraBed||0);
+                  + (b.extraBed||0)*(DB.addons.extraBed||0)
+                  + (b.breakfast||0)*(DB.addons.breakfast||0);
   return applyDiscount((baseRate + addonRate) * nights, b);
 }
 
@@ -516,8 +521,9 @@ function renderDashboard() {
         html+=`<div class="maint-label">⚠ Maintenance</div>`;
       } else if(booking){
         const extras=[];
-        if(booking.extraHead>0) extras.push(`+${booking.extraHead} head`);
-        if(booking.extraBed>0)  extras.push(`+${booking.extraBed} bed`);
+        if(booking.extraHead>0)  extras.push(`+${booking.extraHead} head`);
+        if(booking.extraBed>0)   extras.push(`+${booking.extraBed} bed`);
+        if(booking.breakfast>0)  extras.push(`🍳 ${booking.breakfast} bfast`);
         html+=`<div class="room-guest">${booking.guest}</div>
           ${extras.length?`<div style="font-size:9px;color:var(--text3);margin-top:1px">${extras.join(' · ')}</div>`:''}
           <div class="room-bottom">
@@ -926,6 +932,11 @@ function buildBookingForm(b, preRoom) {
           <input class="form-input" id="bf-extraBed" type="number" min="0" max="5"
                  value="${extraBedVal}" placeholder="0" oninput="updateDiscountPreview()">
         </div>
+        <div class="extras-field">
+          <label style="font-size:12px;color:var(--text2)">Breakfast pax (${peso(addons.breakfast)}/night each)</label>
+          <input class="form-input" id="bf-breakfast" type="number" min="0" max="10"
+                 value="${b?b.breakfast||0:0}" placeholder="0" oninput="updateDiscountPreview()">
+        </div>
       </div>
     </div>
 
@@ -999,6 +1010,7 @@ function updateDiscountPreview() {
   const source   = document.getElementById('bf-source')?.value;
   const extraHead= parseInt(document.getElementById('bf-extraHead')?.value)||0;
   const extraBed = parseInt(document.getElementById('bf-extraBed')?.value)||0;
+  const breakfast= parseInt(document.getElementById('bf-breakfast')?.value)||0;
 
   if (!hotel || !room || !checkin || !checkout || checkin > checkout) {
     preview.style.display = 'none'; return;
@@ -1042,6 +1054,7 @@ function saveBooking() {
   const deposit      =document.getElementById('bf-deposit').checked;
   const extraHead    =parseInt(document.getElementById('bf-extraHead').value)||0;
   const extraBed     =parseInt(document.getElementById('bf-extraBed').value)||0;
+  const breakfast    =parseInt(document.getElementById('bf-breakfast').value)||0;
   const discountType =document.getElementById('bf-discountType').value;
   const discountValue=parseFloat(document.getElementById('bf-discountValue').value)||0;
   const discountNote =document.getElementById('bf-discountNote').value.trim();
@@ -1054,11 +1067,11 @@ function saveBooking() {
   let bookingId;
   if(editingBookingId){
     const i=DB.bookings.findIndex(b=>b.id===editingBookingId);
-    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote};
+    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote};
     bookingId=editingBookingId; toast('Booking updated');
   } else {
     bookingId=genId();
-    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,discountType,discountValue,discountNote});
+    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote});
     toast('Booking added');
   }
   DB.keyDeposits[bookingId]=deposit;
@@ -1144,14 +1157,15 @@ function renderBookingsPage() {
     const paid=hasKeyDeposit(b.id);
     const roomDef=DB.hotels[b.hotel]?.rooms[b.room];
     const baseRate=roomDef?(DB.prices[roomDef.type]||{})[b.source]||0:0;
-    const addonRate=(b.extraHead||0)*DB.addons.extraHead+(b.extraBed||0)*DB.addons.extraBed;
+    const addonRate=(b.extraHead||0)*DB.addons.extraHead+(b.extraBed||0)*DB.addons.extraBed+(b.breakfast||0)*(DB.addons.breakfast||0);
     const gross=(baseRate+addonRate)*nights;
     const total=applyDiscount(gross,b);
     const discAmt=gross-total;
     const hasDisc=b.discountType&&b.discountType!=='none'&&b.discountValue>0;
     const extras=[];
-    if(b.extraHead>0) extras.push(`+${b.extraHead} head`);
-    if(b.extraBed>0)  extras.push(`+${b.extraBed} bed`);
+    if(b.extraHead>0)  extras.push(`+${b.extraHead} head`);
+    if(b.extraBed>0)   extras.push(`+${b.extraBed} bed`);
+    if(b.breakfast>0)  extras.push(`🍳 ${b.breakfast} bfast`);
     const discLabel=hasDisc?(b.discountType==='percent'?`${b.discountValue}% off`:peso(b.discountValue)+' off'):'';
     html+=`<div class="booking-item" onclick="editBooking('${b.id}')">
       <span class="src-badge src-${b.source}">${srcLabel(b.source)}</span>
@@ -1215,6 +1229,13 @@ function renderPricesPage() {
         <label class="addon-label">Extra bed (₱/night per bed)</label>
         <input class="addon-input" type="number" min="0" step="50" value="${addons.extraBed||0}"
                onchange="saveAddon('extraBed',this.value)">
+      </div>
+      <div class="addon-row">
+        <div class="addon-label">
+          <span class="addon-name">🍳 Breakfast (per pax/night)</span>
+        </div>
+        <input class="addon-input" type="number" min="0" step="50" value="${addons.breakfast||0}"
+               onchange="saveAddon('breakfast',this.value)">
       </div>
     </div>
   </div>`;
