@@ -161,9 +161,13 @@ function getRoomStatus(hotel,room,date) {
   if(r.status==='maintenance') return 'maintenance';
   const b=getBookingOnDate(hotel,room,date);
   if(!b) return 'vacant';
-  // Manual checkout flags (staff must mark)
-  if(b.invalidCheckout) return 'invalid-checkout';
-  if(b.checkedOut)      return 'checkout';
+  // Manual checkout flags — only apply on/after the date they were marked
+  const ds=fmtDate(date);
+  if(b.invalidCheckout && b.invalidCheckoutDate && ds>=b.invalidCheckoutDate) return 'invalid-checkout';
+  if(b.checkedOut      && b.checkedOutDate      && ds>=b.checkedOutDate)      return 'checkout';
+  // Fallback for old data without date
+  if(b.invalidCheckout && !b.invalidCheckoutDate) return 'invalid-checkout';
+  if(b.checkedOut      && !b.checkedOutDate)      return 'checkout';
   // Extended stay detection
   const exts=b.extensions||[];
   if(exts.length>0){
@@ -290,19 +294,126 @@ function toggleDepositUI(id,val) {
 
 function markCheckedOut(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  if(b.invalidCheckout){ toast('Cannot mark checkout — already marked invalid'); return; }
-  b.checkedOut=true; b.invalidCheckout=false;
+  b.checkedOut=true; b.checkedOutDate=fmtDate(currentDate);
+  b.invalidCheckout=false; b.invalidCheckoutDate=null;
   saveState(); renderAll(); toast('✅ Marked as checked out');
 }
 function markInvalidCheckout(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  b.invalidCheckout=true; b.checkedOut=false;
+  b.invalidCheckout=true; b.invalidCheckoutDate=fmtDate(currentDate);
+  b.checkedOut=false; b.checkedOutDate=null;
   saveState(); renderAll(); toast('🔴 Marked as invalid checkout');
 }
 function clearCheckoutFlag(id) {
   const b=DB.bookings.find(x=>x.id===id); if(!b) return;
-  b.checkedOut=false; b.invalidCheckout=false;
+  b.checkedOut=false; b.checkedOutDate=null;
+  b.invalidCheckout=false; b.invalidCheckoutDate=null;
   saveState(); renderAll(); toast('Checkout flag cleared');
+}
+
+let _moveRoomId=null;
+
+function moveRoom(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  const hotel=DB.hotels[b.hotel];
+  const allRooms=Object.keys(hotel.rooms);
+  const opts=allRooms
+    .filter(r=>r!==b.room&&hotel.rooms[r].status!=='maintenance')
+    .map(r=>{
+      const occ=getBookingOnDate(b.hotel,r,currentDate);
+      const label=occ?`${r} (${hotel.rooms[r].type}) — ⚠️ Occupied by ${occ.guest}`:`${r} (${hotel.rooms[r].type})`;
+      return `<option value="${r}" ${occ?'style="color:#dc2626"':''}>${label}</option>`;
+    }).join('');
+  if(!opts){ toast('No other rooms available'); return; }
+
+  _moveRoomId=id;
+  const mrm=document.getElementById('moveRoomModal');
+  if(!mrm){ toast('Modal not found — refresh the page'); return; }
+  document.getElementById('moveRoomSub').textContent=b.guest;
+  document.getElementById('moveRoomCurrentLabel').innerHTML=`Currently in <strong>${b.room}</strong>. Move to:`;
+  document.getElementById('moveRoomSelect').innerHTML=opts;
+  document.getElementById('moveRoomNote').value='';
+  mrm.style.cssText='display:flex;z-index:400';
+}
+
+function confirmMoveRoom() {
+  const b=DB.bookings.find(x=>x.id===_moveRoomId); if(!b) return;
+  const oldRoom=b.room;
+  const newRoom=document.getElementById('moveRoomSelect')?.value;
+  const note=document.getElementById('moveRoomNote')?.value.trim()||'Guest request';
+  if(!newRoom||newRoom===b.room){ toast('Select a different room'); return; }
+
+  const moveDate=fmtDate(currentDate);
+
+  // Capture original checkout BEFORE mutating b
+  const originalCheckout = b.extensions?.length
+    ? b.extensions[b.extensions.length-1].checkout
+    : b.checkout;
+
+  // Validate: new room must not be occupied during the remaining stay period
+  const conflict = DB.bookings.find(bk =>
+    bk.id !== b.id &&
+    bk.hotel === b.hotel &&
+    bk.room === newRoom &&
+    parseDate(bk.checkin) <= parseDate(originalCheckout) &&
+    parseDate(bk.checkout) >= parseDate(moveDate)
+  );
+  if(conflict){
+    toast(`🚫 ${newRoom} is already booked by ${conflict.guest} during that period`);
+    return;
+  }
+
+  // Also check if new room has someone in it RIGHT NOW
+  const occupiedNow = getBookingOnDate(b.hotel, newRoom, currentDate);
+  if(occupiedNow && occupiedNow.id !== b.id){
+    toast(`🚫 ${newRoom} is currently occupied by ${occupiedNow.guest}`);
+    return;
+  }
+
+  // Build new booking first
+  const newBooking={
+    id: 'bk_'+Date.now(),
+    guest:    b.guest,
+    hotel:    b.hotel,
+    room:     newRoom,
+    checkin:  moveDate,
+    checkout: originalCheckout,
+    source:   b.source,
+    notes:    b.notes,
+    extraHead:b.extraHead||0,
+    extraBed: b.extraBed||0,
+    breakfast:b.breakfast||0,
+    discountType:  b.discountType,
+    discountValue: b.discountValue,
+    discountNote:  b.discountNote,
+    payments:  [],
+    extensions:[],
+    roomMoves: [{ from:oldRoom, to:newRoom, date:moveDate, note, movedFrom:b.id }],
+  };
+
+  // 1. End or remove original booking
+  if(b.checkin === moveDate){
+    // Checked in today — zero nights in old room, just remove it
+    DB.bookings=DB.bookings.filter(bk=>bk.id!==b.id);
+    // Copy deposit to new booking
+    if(DB.keyDeposits[b.id]){ DB.keyDeposits[newBooking.id]=true; delete DB.keyDeposits[b.id]; }
+  } else {
+    const yesterday=new Date(currentDate);
+    yesterday.setDate(yesterday.getDate()-1);
+    b.checkout=fmtDate(yesterday);
+    // Record move history on original
+    if(!b.roomMoves) b.roomMoves=[];
+    b.roomMoves.push({ from:oldRoom, to:newRoom, date:moveDate, note, movedTo:newBooking.id });
+    // Copy deposit to new booking
+    if(DB.keyDeposits[b.id]) DB.keyDeposits[newBooking.id]=true;
+  }
+
+  // 2. Register new booking
+  DB.bookings.push(newBooking);
+
+  closeModal('moveRoomModal');
+  saveState(); renderAll();
+  toast(`✅ ${b.guest} moved to ${newRoom} from ${moveDate}`);
 }
 
 function addPayment(id) {
@@ -447,7 +558,7 @@ function setFilter(v,el) {
 
 function renderAll() {
   document.getElementById('topbarDate').textContent  = dateStr(currentDate);
-  document.getElementById('sidebarDate').textContent = new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
+  document.getElementById('sidebarDate').textContent = currentDate.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
   if      (currentPage==='dashboard') renderDashboard();
   else if (currentPage==='rooms')     renderRoomsPage();
   else if (currentPage==='bookings')  renderBookingsPage();
@@ -528,6 +639,7 @@ function renderDashboard() {
           ${extras.length?`<div style="font-size:9px;color:var(--text3);margin-top:1px">${extras.join(' · ')}</div>`:''}
           <div class="room-bottom">
             <span class="src-badge src-${booking.source}">${srcShort(booking.source)}</span>
+            ${booking.roomMoves?.length?`<span class="moved-badge">↔ Moved</span>`:''}
             <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">
               ${isCheckout?'<span class="checkout-badge">Checkout</span>':''}
               ${isCheckin&&!isCheckout?'<span class="checkin-badge">Check-in</span>':''}
@@ -598,6 +710,7 @@ function renderRoomGuest() {
     const balance   =Math.max(0,amtDue-amtPaid);
     const isCheckin =fmtDate(currentDate)===b.checkin;
     const isCheckout=fmtDate(currentDate)===b.checkout;
+    const moveHistory=(b.roomMoves||[]).map(m=>`<div style="font-size:11px;color:var(--text2);padding:2px 0">↔ ${m.from} → ${m.to} · ${shortDate(m.date)}${m.note?' · '+m.note:''}</div>`).join('');
     const nights    =Math.round((parseDate(b.checkout)-parseDate(b.checkin))/864e5)+1;
     const exts      =b.extensions||[];
     if(idx>0) html+=`<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">`;
@@ -606,6 +719,9 @@ function renderRoomGuest() {
         <div class="guest-panel-name">${b.guest}</div>
         <div class="guest-panel-meta">
           <span class="src-badge src-${b.source}">${srcLabel(b.source)}</span>
+          ${moveHistory?`<div style="margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--amber)">
+            <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:2px">ROOM CHANGES</div>
+            ${moveHistory}</div>`:''}
           ${isCheckin?'<span class="checkin-badge">Checking in today</span>':''}
           ${isCheckout?'<span class="checkout-badge">Checking out today</span>':''}
           ${exts.length?`<span class="extended-badge">Extended ×${exts.length}</span>`:''}
@@ -654,19 +770,29 @@ function renderRoomGuest() {
         <button class="guest-action-btn action-yellow" onclick="openExtendStay('${b.id}')">
           ⟳ Extend stay
         </button>
-        ${!b.checkedOut&&!b.invalidCheckout?`
+        <button class="guest-action-btn action-move" onclick="event.stopPropagation();moveRoom('${b.id}')">
+          ↔ Move room
+        </button>
+        ${(()=>{
+          const cdStr=fmtDate(currentDate);
+          const coActive=b.checkedOut&&(b.checkedOutDate?cdStr>=b.checkedOutDate:true);
+          const invActive=b.invalidCheckout&&(b.invalidCheckoutDate?cdStr>=b.invalidCheckoutDate:true);
+          if(coActive) return `
+        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
+          ↩ Undo checkout
+        </button>`;
+          if(invActive) return `
+        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
+          ↩ Undo invalid checkout
+        </button>`;
+          return `
         <button class="guest-action-btn action-checkout" onclick="markCheckedOut('${b.id}')">
           🚪 Mark checked out
         </button>
         <button class="guest-action-btn action-invalid" onclick="markInvalidCheckout('${b.id}')">
           🔴 Invalid checkout
-        </button>`:b.checkedOut?`
-        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
-          ↩ Undo checkout
-        </button>`:b.invalidCheckout?`
-        <button class="guest-action-btn action-undo" onclick="clearCheckoutFlag('${b.id}')">
-          ↩ Undo invalid checkout
-        </button>`:''}
+        </button>`;
+        })()}
 
         <button class="guest-action-btn action-edit" onclick="editBooking('${b.id}')">
           ✎ Edit booking
@@ -861,8 +987,8 @@ function buildBookingForm(b, preRoom) {
 
   // Safe field reads with fallbacks for old bookings
   const guestVal       = b ? b.guest        : '';
-  const checkinVal     = b ? b.checkin       : fmtDate(new Date());
-  const checkoutVal    = b ? b.checkout      : fmtDate(new Date());
+  const checkinVal     = b ? b.checkin       : fmtDate(currentDate);
+  const checkoutVal    = b ? b.checkout      : fmtDate(currentDate);
   const extraHeadVal   = b ? (b.extraHead  || 0) : 0;
   const extraBedVal    = b ? (b.extraBed   || 0) : 0;
   const discType       = b ? (b.discountType  || 'none') : 'none';
@@ -1082,7 +1208,7 @@ function deleteBooking(id) {
   if(!confirm('Delete this booking?')) return;
   DB.bookings=DB.bookings.filter(b=>b.id!==id);
   delete DB.keyDeposits[id];
-  saveState(); closeModal('bookingModal'); closeModal('roomModal'); closeModal('extendModal'); renderAll(); toast('Booking deleted');
+  activeRoom=null; saveState(); closeModal('bookingModal'); closeModal('roomModal'); closeModal('extendModal'); renderAll(); toast('Booking deleted');
 }
 function closeBookingModal(e) { if(e.target===document.getElementById('bookingModal')) closeModal('bookingModal'); }
 
@@ -1250,7 +1376,7 @@ function savePrice(type,src,val) {
 }
 function saveAddon(key,val) {
   DB.addons[key]=parseFloat(val)||0;
-  saveState(); toast('Add-on rate saved');
+  saveState(); renderAll(); toast('Add-on rate saved');
 }
 
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
@@ -1390,7 +1516,7 @@ function renderAnalytics() {
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).style.display='none'; }
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal','extendModal','changePwModal','importExportModal'].forEach(id=>{const el=document.getElementById(id);if(el)closeModal(id);});
+  if(e.key==='Escape') ['roomModal','bookingModal','addRoomModal','extendModal','changePwModal','importExportModal','moveRoomModal'].forEach(id=>{const el=document.getElementById(id);if(el)closeModal(id);});
 });
 
 // ─── CHANGE PASSWORD (admin only) ────────────────────────────────────────────
@@ -1416,8 +1542,8 @@ function saveNewPassword() {
 }
 
 // ─── MONTH VIEW ───────────────────────────────────────────────────────────────
-let mvYear  = new Date().getFullYear();
-let mvMonth = new Date().getMonth();
+let mvYear  = currentDate.getFullYear();
+let mvMonth = currentDate.getMonth();
 
 function mvShift(d) {
   mvMonth += d;
@@ -1426,8 +1552,8 @@ function mvShift(d) {
   renderMonthView();
 }
 function mvGoToday() {
-  mvYear  = new Date().getFullYear();
-  mvMonth = new Date().getMonth();
+  mvYear  = currentDate.getFullYear();
+  mvMonth = currentDate.getMonth();
   renderMonthView();
 }
 
@@ -1435,7 +1561,7 @@ function renderMonthView() {
   const h       = currentHotel;
   const hotel   = DB.hotels[h];
   const days    = new Date(mvYear, mvMonth + 1, 0).getDate();
-  const today   = fmtDate(new Date());
+  const today   = fmtDate(currentDate);
   const mStart  = new Date(mvYear, mvMonth, 1);
   const mEnd    = new Date(mvYear, mvMonth + 1, 0);
 
@@ -1501,33 +1627,38 @@ function renderMonthView() {
         continue;
       }
 
-      // Determine colour based on payment + extension status
+      // Determine colour — mirrors getRoomStatus + paid-today logic
       const isCheckin  = dateStr === booking.checkin;
       const isCheckout = dateStr === booking.checkout;
       const exts       = booking.extensions || [];
       let   cellClass  = 'mv-occupied';
 
-      if (exts.length > 0) {
-        const origCo = parseDate(exts[0].originalCheckout || booking.checkout);
-        const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        if (d0 > origCo) {
-          // In an extension
-          for (let ei = 0; ei < exts.length; ei++) {
-            const prevEnd = ei === 0 ? origCo : parseDate(exts[ei-1].checkout);
-            const thisEnd = parseDate(exts[ei].checkout);
-            if (d0 > prevEnd && d0 <= thisEnd) {
-              cellClass = ei % 2 === 0 ? 'mv-extended' : 'mv-extended-alt';
-              break;
+      // Manual flags — date-aware
+      if (booking.invalidCheckout && (booking.invalidCheckoutDate ? dateStr>=booking.invalidCheckoutDate : true))
+        cellClass = 'mv-invalid-checkout';
+      else if (booking.checkedOut && (booking.checkedOutDate ? dateStr>=booking.checkedOutDate : true))
+        cellClass = 'mv-checkout';
+      else {
+        // Extension detection
+        if (exts.length > 0) {
+          const origCo = parseDate(exts[0].originalCheckout || booking.checkout);
+          const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          if (d0 > origCo) {
+            for (let ei = 0; ei < exts.length; ei++) {
+              const prevEnd = ei === 0 ? origCo : parseDate(exts[ei-1].checkout);
+              const thisEnd = parseDate(exts[ei].checkout);
+              if (d0 > prevEnd && d0 <= thisEnd) {
+                cellClass = ei % 2 === 0 ? 'mv-extended' : 'mv-extended-alt';
+                break;
+              }
             }
           }
         }
-      }
-
-      // Payment overrides
-      if (cellClass === 'mv-occupied') {
-        const pmtStatus = bookingPaymentStatus(booking);
-        if      (pmtStatus === 'full')    cellClass = 'mv-paid-full';
-        else if (pmtStatus === 'partial') cellClass = 'mv-paid-partial';
+        // Paid-today highlight (on occupied cells only)
+        if (cellClass === 'mv-occupied') {
+          const paidToday = (booking.payments||[]).some(p => p.date === dateStr);
+          if (paidToday) cellClass = 'mv-paid-today';
+        }
       }
 
       // Check for multi-guest
@@ -1543,14 +1674,16 @@ function renderMonthView() {
 
       const tip = `${booking.guest} · ${srcLabel(booking.source)} · ${shortDate(booking.checkin)}–${shortDate(booking.checkout)}`;
 
-      rows += `<td class="mv-cell ${cellClass} ${isToday?'mv-today-cell':''}"
+      const movedBadge = booking.roomMoves?.length ? '<div class="mv-moved-dot">↔</div>' : '';
+      rows += `<td class="mv-cell ${cellClass} ${isToday?'mv-today-cell':''} ${isCheckin?'mv-is-checkin':''} ${isCheckout?'mv-is-checkout':''}"
                    onclick="openRoom('${roomNum}')" title="${tip}">
         <div class="mv-cell-inner">
-          ${isCheckin ? `<div class="mv-checkin-marker"></div>` : ''}
-          ${isCheckout? `<div class="mv-checkout-marker"></div>` : ''}
+          ${isCheckin  ? `<div class="mv-edge-marker mv-checkin-marker"></div>` : ''}
+          ${isCheckout ? `<div class="mv-edge-marker mv-checkout-marker"></div>` : ''}
           <div class="mv-guest-name">${shortName}</div>
           ${d === 1 || isCheckin ? `<div class="mv-src-tag">${srcCode}</div>` : ''}
-          ${hasMulti ? '<div class="mv-multi-dot">👥</div>' : ''}
+          ${hasMulti ? '<div class="mv-multi-dot">+${multiBookings.length}</div>' : ''}
+          ${movedBadge}
         </div>
       </td>`;
     }

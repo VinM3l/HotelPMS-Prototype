@@ -214,11 +214,13 @@
           </div>
           <button class="today-btn" onclick="mvGoToday()">This month</button>
           <div class="mv-legend">
-            <span class="mv-leg"><span class="mv-dot" style="background:#c6edd5"></span>Occupied</span>
-            <span class="mv-leg"><span class="mv-dot" style="background:#dbeafe"></span>Partial</span>
-            <span class="mv-leg"><span class="mv-dot" style="background:#a8d5b8"></span>Paid</span>
-            <span class="mv-leg"><span class="mv-dot" style="background:#fefce8"></span>Extended</span>
-            <span class="mv-leg"><span class="mv-dot" style="background:#f3f4f6;border:1px solid #d1d5db"></span>Maint.</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#1a7a4a"></span>Occupied</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#60a5fa"></span>Paid today</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#1d4ed8"></span>Checkout</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#dc2626"></span>Invalid</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#d97706"></span>Extended</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#15803d"></span>Ext. alt</span>
+            <span class="mv-leg"><span class="mv-dot" style="background:#374151"></span>Maint.</span>
           </div>
         </div>
         <div class="mv-wrap" id="mvWrap"></div>
@@ -356,6 +358,29 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('changePwModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveNewPassword()">Save password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Move Room Modal -->
+<div class="overlay" id="moveRoomModal" style="display:none;z-index:400"
+     onclick="if(event.target===this)closeModal('moveRoomModal')">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Move Guest</div>
+        <div class="modal-sub" id="moveRoomSub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('moveRoomModal')">&#x2715;</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;padding:18px">
+      <div style="font-size:13px;color:var(--text2)" id="moveRoomCurrentLabel"></div>
+      <select class="form-input" id="moveRoomSelect"></select>
+      <input class="form-input" id="moveRoomNote" type="text" placeholder="Reason (optional, e.g. guest request)">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn btn-ghost" onclick="closeModal('moveRoomModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmMoveRoom()">Move</button>
+      </div>
     </div>
   </div>
 </div>
