@@ -110,6 +110,8 @@ DB.bookings.forEach(b => {
   // timestamps — null means "not yet recorded" (old data)
   if (b.checkinTime      === undefined) b.checkinTime      = null;
   if (b.checkoutTime     === undefined) b.checkoutTime     = null;
+  if (b.checkinTimeStr   === undefined) b.checkinTimeStr   = '14:00';
+  if (b.checkoutTimeStr  === undefined) b.checkoutTimeStr  = '12:00';
   // clean up old boolean balance fields
   if (b.balancePaid     !== undefined) delete b.balancePaid;
   if (b.balancePaidDate !== undefined) delete b.balancePaidDate;
@@ -132,10 +134,24 @@ function isInRangeInclusive(d,ci,co) {
   const ds=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
   return ds>=parseDate(ci).getTime()&&ds<=parseDate(co).getTime();
 }
-// Two bookings conflict if their date ranges overlap (exclusive of shared endpoints)
-function bookingsOverlap(ci1,co1,ci2,co2) {
-  return parseDate(ci1).getTime() < parseDate(co2).getTime()
-      && parseDate(co1).getTime() > parseDate(ci2).getTime();
+// Two bookings conflict if their stays genuinely overlap.
+// Same checkout date as checkin date is OK *only if* checkout time <= checkin time
+// (i.e. the first guest leaves before or when the second arrives).
+function bookingsOverlap(ci1,co1,ci2,co2, coTime1,ciTime2) {
+  const t = s => parseDate(s).getTime();
+  // Completely separate — no overlap possible
+  if (t(co1) <= t(ci2) || t(co2) <= t(ci1)) {
+    // They share a boundary date — check times
+    if (t(co1) === t(ci2)) {
+      // Booking1 checks out same day Booking2 checks in
+      // Conflict only if checkout time is AFTER checkin time
+      const coT = coTime1 || '12:00';
+      const ciT = ciTime2 || '14:00';
+      return coT > ciT; // e.g. "15:00" > "14:00" = conflict
+    }
+    return false;
+  }
+  return true; // proper overlap
 }
 function genId() { return 'b'+Date.now()+Math.random().toString(36).slice(2,6); }
 function peso(n) { return '₱'+Math.round(n).toLocaleString(); }
@@ -366,7 +382,8 @@ function moveRoom(id) {
     .map(r=>{
       const clash=DB.bookings.find(bk=>
         bk.hotel===b.hotel && bk.room===r && bk.id!==b.id &&
-        bookingsOverlap(bk.checkin, bk.checkout, moveDate, stayEnd)
+        bookingsOverlap(bk.checkin, bk.checkout, moveDate, stayEnd,
+                        bk.checkoutTimeStr||'12:00', b.checkinTimeStr||'14:00')
       );
       const label=clash
         ?`${r} (${hotel.rooms[r].type}) — ⚠️ Taken by ${clash.guest} ${shortDate(clash.checkin)}–${shortDate(clash.checkout)}`
@@ -404,7 +421,8 @@ function confirmMoveRoom() {
     bk.id    !== b.id   &&
     bk.hotel === b.hotel &&
     bk.room  === newRoom &&
-    bookingsOverlap(bk.checkin, bk.checkout, moveDate, originalCheckout)
+    bookingsOverlap(bk.checkin, bk.checkout, moveDate, originalCheckout,
+                    bk.checkoutTimeStr||'12:00', b.checkinTimeStr||'14:00')
   );
   if(conflict){
     toast(`🚫 ${newRoom} is already booked by ${conflict.guest} (${shortDate(conflict.checkin)} – ${shortDate(conflict.checkout)}) during that period`);
@@ -551,7 +569,8 @@ function confirmExtendStay(id) {
   // Check no conflicting booking in new room for the extended period
   const extConflict=DB.bookings.find(bk=>
     bk.id!==b.id && bk.hotel===b.hotel && bk.room===b.room &&
-    bookingsOverlap(bk.checkin, bk.checkout, b.checkout, newCheckout)
+    bookingsOverlap(bk.checkin, bk.checkout, b.checkout, newCheckout,
+                    bk.checkoutTimeStr||'12:00', b.checkoutTimeStr||'12:00')
   );
   if(extConflict){
     toast(`🚫 Extension blocked — ${extConflict.guest} is booked in this room (${shortDate(extConflict.checkin)}–${shortDate(extConflict.checkout)})`);
@@ -778,8 +797,8 @@ function renderRoomGuest() {
         </div>
       </div>
       <div class="guest-panel-grid">
-        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-in</div><div class="guest-panel-stat-val">${shortDate(b.checkin)}</div>${b.checkinTime?`<div style="font-size:10px;color:var(--text3);margin-top:1px">🕐 ${fmtTimestamp(b.checkinTime)}</div>`:''}</div>
-        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-out</div><div class="guest-panel-stat-val">${shortDate(b.checkout)}</div>${b.checkoutTime?`<div style="font-size:10px;color:var(--text3);margin-top:1px">🕐 ${fmtTimestamp(b.checkoutTime)}</div>`:''}</div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-in</div><div class="guest-panel-stat-val">${shortDate(b.checkin)}</div><div style="font-size:11px;color:var(--text3);margin-top:1px">🕐 ${b.checkinTimeStr||'14:00'}${b.checkinTime?` · arrived ${fmtTimestamp(b.checkinTime)}`:''}</div></div>
+        <div class="guest-panel-stat"><div class="guest-panel-stat-label">Check-out</div><div class="guest-panel-stat-val">${shortDate(b.checkout)}</div><div style="font-size:11px;color:var(--text3);margin-top:1px">🕐 ${b.checkoutTimeStr||'12:00'}${b.checkoutTime?` · done ${fmtTimestamp(b.checkoutTime)}`:''}</div></div>
         <div class="guest-panel-stat"><div class="guest-panel-stat-label">Nights</div><div class="guest-panel-stat-val">${nights}</div></div>
         <div class="guest-panel-stat"><div class="guest-panel-stat-label">Total due</div><div class="guest-panel-stat-val" style="color:var(--green-text)">${peso(amtDue)}</div></div>
       </div>
@@ -1049,6 +1068,8 @@ function buildBookingForm(b, preRoom) {
   const guestVal       = b ? b.guest        : '';
   const checkinVal     = b ? b.checkin       : fmtDate(currentDate);
   const checkoutVal    = b ? b.checkout      : fmtDate(currentDate);
+  const checkinTimeVal  = b ? (b.checkinTimeStr  || '14:00') : '14:00';
+  const checkoutTimeVal = b ? (b.checkoutTimeStr || '12:00') : '12:00';
   const extraHeadVal   = b ? (b.extraHead  || 0) : 0;
   const extraBedVal    = b ? (b.extraBed   || 0) : 0;
   const discType       = b ? (b.discountType  || 'none') : 'none';
@@ -1064,8 +1085,8 @@ function buildBookingForm(b, preRoom) {
       return `<option value="${r}" ${sel}>${r} – ${DB.hotels[h].rooms[r].label}</option>`;
     }).join('');
 
-  const srcOpts = ['T','W','B','AG','EX'].map(s => {
-    const sel = b && b.source === s ? 'selected' : '';
+  const srcOpts = ['W','T','B','AG','EX'].map(s => {
+    const sel = (b ? b.source === s : s === 'W') ? 'selected' : '';
     return `<option value="${s}" ${sel}>${srcLabel(s)}</option>`;
   }).join('');
 
@@ -1094,11 +1115,17 @@ function buildBookingForm(b, preRoom) {
     </div>
     <div class="form-group">
       <label class="form-label">Check-in</label>
-      <input class="form-input" id="bf-checkin" type="date" value="${checkinVal}">
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="form-input" id="bf-checkin" type="date" value="${checkinVal}" style="flex:1">
+        <input class="form-input" id="bf-checkinTime" type="time" value="${checkinTimeVal}" style="width:110px" title="Check-in time">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Check-out</label>
-      <input class="form-input" id="bf-checkout" type="date" value="${checkoutVal}">
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="form-input" id="bf-checkout" type="date" value="${checkoutVal}" style="flex:1">
+        <input class="form-input" id="bf-checkoutTime" type="time" value="${checkoutTimeVal}" style="width:110px" title="Check-out time">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Source</label>
@@ -1235,6 +1262,8 @@ function saveBooking() {
   const room    =document.getElementById('bf-room').value;
   const checkin =document.getElementById('bf-checkin').value;
   const checkout=document.getElementById('bf-checkout').value;
+  const checkinTimeStr  = document.getElementById('bf-checkinTime').value  || '14:00';
+  const checkoutTimeStr = document.getElementById('bf-checkoutTime').value || '12:00';
   const source  =document.getElementById('bf-source').value;
   const notes   =document.getElementById('bf-notes').value;
   const deposit      =document.getElementById('bf-deposit').checked;
@@ -1248,31 +1277,33 @@ function saveBooking() {
   if(!guest)              { toast('Please enter a guest name'); return; }
   if(!checkin||!checkout) { toast('Please set check-in and check-out dates'); return; }
   if(checkin>checkout)    { toast('Check-out must be after check-in'); return; }
-  if(checkin===checkout)  { toast('Check-out must be after check-in (same day not allowed)'); return; }
   if(discountType==='percent'&&discountValue>100){ toast('Percentage discount cannot exceed 100%'); return; }
 
   // ── Overlap check ──────────────────────────────────────────────────────────
-  // Rule: checkout day of one booking = valid checkin day for the next.
-  // Conflict = two bookings whose stays genuinely overlap (strict).
+  // Same checkout date as another's checkin is OK only if checkout time ≤ checkin time.
   const conflict = DB.bookings.find(b =>
     b.hotel === hotel &&
     b.room  === room  &&
     b.id    !== editingBookingId &&
-    bookingsOverlap(b.checkin, b.checkout, checkin, checkout)
+    bookingsOverlap(b.checkin, b.checkout, checkin, checkout,
+                    b.checkoutTimeStr || '12:00', checkinTimeStr)
   );
   if (conflict) {
-    toast(`🚫 Room ${room} is already booked by ${conflict.guest} (${shortDate(conflict.checkin)} – ${shortDate(conflict.checkout)})`);
+    const timeNote = conflict.checkout === checkin
+      ? ` — checkout at ${conflict.checkoutTimeStr||'12:00'}, your checkin at ${checkinTimeStr}`
+      : '';
+    toast(`🚫 Room ${room} is already booked by ${conflict.guest} (${shortDate(conflict.checkin)} – ${shortDate(conflict.checkout)})${timeNote}`);
     return;
   }
 
   let bookingId;
   if(editingBookingId){
     const i=DB.bookings.findIndex(b=>b.id===editingBookingId);
-    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote};
+    if(i>=0) DB.bookings[i]={...DB.bookings[i],guest,hotel,room,checkin,checkout,checkinTimeStr,checkoutTimeStr,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote};
     bookingId=editingBookingId; toast('Booking updated');
   } else {
     bookingId=genId();
-    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote,
+    DB.bookings.push({id:bookingId,guest,hotel,room,checkin,checkout,checkinTimeStr,checkoutTimeStr,source,notes,extraHead,extraBed,breakfast,discountType,discountValue,discountNote,
       payments:[],extensions:[],
       checkinTime: fmtDate(currentDate)===checkin ? nowTimestamp() : null,
       checkoutTime: null
