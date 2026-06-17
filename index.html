@@ -133,12 +133,14 @@
           <button class="filter-pill" onclick="setFilter('no-deposit',this)">🔑 No deposit</button>
         </div>
         <div class="legend-row">
-          <div class="legend-item"><div class="legend-dot" style="background:#c6edd5;border:1.5px solid #7dc4a0"></div>Occupied</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#dbeafe;border:1.5px solid #93c5fd"></div>Checkout today</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#1a7a4a;border:1.5px solid #0d3d22"></div><span style="color:#fff;display:none"></span>Occupied</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#1d4ed8;border:1.5px solid #1e3a8a"></div>Checkout today</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#dc2626;border:1.5px solid #7f1d1d"></div>Invalid checkout</div>
           <div class="legend-item"><div class="legend-dot" style="background:#ffffff;border:1.5px solid #a7d7bc"></div>Vacant</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#fef9c3;border:1.5px solid #fde047"></div>Extended</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#dcfce7;border:1.5px solid #86efac"></div>Extended (alt)</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#f3f4f6;border:1.5px solid #9ca3af"></div>Maintenance</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#d97706;border:1.5px solid #92400e"></div>Extended</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#15803d;border:1.5px solid #14532d"></div>Extended (alt)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#60a5fa;border:1.5px solid #2563eb"></div>Paid today</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#374151;border:1.5px solid #1c2128"></div>Maintenance</div>
           <div class="legend-item">|</div>
           <div class="legend-item"><span class="legend-badge src-T">Trip</span>Trip.com</div>
           <div class="legend-item"><span class="legend-badge src-W">Walk</span>Walk-in</div>
@@ -273,7 +275,7 @@
 </div>
 
 <!-- ── Add Room Modal ────────────────────────────────────────────────────────── -->
-<div class="overlay" id="addRoomModal" style="display:none" onclick="closeModal('addRoomModal')">
+<div class="overlay" id="addRoomModal" style="display:none" onclick="if(event.target===this)closeModal('addRoomModal')">
   <div class="modal" style="max-width:400px">
     <div class="modal-head">
       <div class="modal-title">Add Room</div>
@@ -371,9 +373,6 @@
         <div class="modal-title">Move Guest</div>
         <div class="modal-sub" id="moveRoomSub"></div>
       </div>
-
-
-
       <button class="modal-close" onclick="closeModal('moveRoomModal')">&#x2715;</button>
     </div>
     <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;padding:18px">
@@ -383,8 +382,6 @@
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button class="btn btn-ghost" onclick="closeModal('moveRoomModal')">Cancel</button>
         <button class="btn btn-primary" onclick="confirmMoveRoom()">Move</button>
-
-        
       </div>
     </div>
   </div>
@@ -399,6 +396,7 @@
 
 <script>
   // Boot sequence — runs after all scripts load
+  loadPersistedPasswords(); // restore saved passwords before auth check
   bootAuth();
 </script>
 </body>

@@ -64,6 +64,7 @@ const DEFAULT_DB = {
   },
   keyDeposits: {},
   bookings: [
+    // Seed data — migration in loadState() fills missing fields on load
     { id:'b1',  hotel:'square', room:'100', guest:'YAMAGUCHI HIROAKI',   source:'T',  checkin:'2026-01-01', checkout:'2026-01-07', notes:'', extraHead:0, extraBed:0 },
     { id:'b2',  hotel:'square', room:'101', guest:'Bruce Hunter',         source:'W',  checkin:'2026-01-01', checkout:'2026-01-01', notes:'', extraHead:0, extraBed:0 },
     { id:'b3',  hotel:'square', room:'102', guest:'OHASHI TAKASHI',       source:'AG', checkin:'2026-01-04', checkout:'2026-01-05', notes:'', extraHead:0, extraBed:0 },
@@ -135,23 +136,21 @@ function isInRangeInclusive(d,ci,co) {
   return ds>=parseDate(ci).getTime()&&ds<=parseDate(co).getTime();
 }
 // Two bookings conflict if their stays genuinely overlap.
-// Same checkout date as checkin date is OK *only if* checkout time <= checkin time
-// (i.e. the first guest leaves before or when the second arrives).
+// Shared boundary (one checkout = other checkin) is OK only if the departing
+// guest's checkoutTime <= the arriving guest's checkinTime. Symmetric.
 function bookingsOverlap(ci1,co1,ci2,co2, coTime1,ciTime2) {
   const t = s => parseDate(s).getTime();
-  // Completely separate — no overlap possible
-  if (t(co1) <= t(ci2) || t(co2) <= t(ci1)) {
-    // They share a boundary date — check times
-    if (t(co1) === t(ci2)) {
-      // Booking1 checks out same day Booking2 checks in
-      // Conflict only if checkout time is AFTER checkin time
-      const coT = coTime1 || '12:00';
-      const ciT = ciTime2 || '14:00';
-      return coT > ciT; // e.g. "15:00" > "14:00" = conflict
-    }
-    return false;
+  const t1ci=t(ci1),t1co=t(co1),t2ci=t(ci2),t2co=t(co2);
+  if (t1co < t2ci || t2co < t1ci) return false; // completely separate
+  // Shared boundary: booking1 checks out same day booking2 checks in
+  if (t1co === t2ci) {
+    return (coTime1||'12:00') > (ciTime2||'14:00');
   }
-  return true; // proper overlap
+  // Shared boundary: booking2 checks out same day booking1 checks in
+  if (t2co === t1ci) {
+    return (ciTime2||'12:00') > (coTime1||'14:00');
+  }
+  return true; // proper date overlap
 }
 function genId() { return 'b'+Date.now()+Math.random().toString(36).slice(2,6); }
 function peso(n) { return '₱'+Math.round(n).toLocaleString(); }
@@ -229,7 +228,7 @@ function bookingIncomeInRange(b, from, to) {
   const end   = co > to   ? to   : co;
   if (start > end) return 0;
 
-  const nights = Math.round((end - start) / 864e5) + 1;
+  const nights = Math.max(1, Math.round((end - start) / 864e5));
   const roomDef = DB.hotels[b.hotel]?.rooms[b.room];
   if (!roomDef) return 0;
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
@@ -258,7 +257,7 @@ function bookingDiscountAmount(b) {
   const roomDef = DB.hotels[b.hotel]?.rooms[b.room];
   if (!roomDef) return 0;
   const ci = parseDate(b.checkin), co = parseDate(b.checkout);
-  const nights = Math.round((co - ci) / 864e5) + 1;
+  const nights = Math.max(1, Math.round((co - ci) / 864e5));
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0) * (DB.addons.extraHead||0)
                   + (b.extraBed||0)  * (DB.addons.extraBed||0)
@@ -272,7 +271,7 @@ function bookingTotalDue(b) {
   const roomDef = DB.hotels[b.hotel]?.rooms[b.room];
   if (!roomDef) return 0;
   const ci = parseDate(b.checkin), co = parseDate(b.checkout);
-  const nights = Math.round((co - ci) / 864e5) + 1;
+  const nights = Math.max(1, Math.round((co - ci) / 864e5));
   const baseRate  = (DB.prices[roomDef.type]||{})[b.source] || 0;
   const addonRate = (b.extraHead||0)*(DB.addons.extraHead||0)
                   + (b.extraBed||0)*(DB.addons.extraBed||0)
@@ -343,6 +342,13 @@ function markCheckedIn(id) {
   b.checkinTime=nowTimestamp();
   saveState(); renderRoomGuest(); renderDashboard();
   toast('✅ Check-in time recorded: '+fmtTimestamp(b.checkinTime));
+}
+
+function clearCheckinTime(id) {
+  const b=DB.bookings.find(x=>x.id===id); if(!b) return;
+  b.checkinTime=null;
+  saveState(); renderRoomGuest(); renderDashboard();
+  toast('Check-in stamp cleared');
 }
 
 function markCheckedOut(id) {
@@ -429,7 +435,7 @@ function confirmMoveRoom() {
     return;
   }
 
-  // Build new booking first
+  // Build new booking first — inherit all guest details + full move history
   const newBooking={
     id: 'bk_'+Date.now(),
     guest:    b.guest,
@@ -445,9 +451,14 @@ function confirmMoveRoom() {
     discountType:  b.discountType,
     discountValue: b.discountValue,
     discountNote:  b.discountNote,
+    checkinTimeStr:  b.checkinTimeStr  || '14:00',
+    checkoutTimeStr: b.checkoutTimeStr || '12:00',
+    checkinTime:  b.checkinTime  || null,  // carry over actual arrival stamp
+    checkoutTime: null,
     payments:  [],
     extensions:[],
-    roomMoves: [{ from:oldRoom, to:newRoom, date:moveDate, note, movedFrom:b.id }],
+    // Carry full prior move history + this new move
+    roomMoves: [...(b.roomMoves||[]), { from:oldRoom, to:newRoom, date:moveDate, note, movedFrom:b.id }],
   };
 
   // 1. End or remove original booking
@@ -469,6 +480,8 @@ function confirmMoveRoom() {
 
   // 2. Register new booking
   DB.bookings.push(newBooking);
+
+  if(!confirm(`Move ${b.guest} from room ${oldRoom} to room ${newRoom}? This cannot be undone.`)) return;
 
   closeModal('moveRoomModal');
   saveState(); renderAll();
@@ -543,7 +556,9 @@ function openExtendStay(id) {
         <div class="form-group">
           <label class="form-label">New checkout date</label>
           <input class="form-input" id="extNewCheckout" type="date"
-                 min="${b.checkout}" value="${b.checkout}" style="font-size:15px;padding:10px">
+                 min="${(()=>{const d=new Date(b.checkout+'T00:00:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})()||b.checkout}"
+                 value="${(()=>{const d=new Date(b.checkout+'T00:00:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})()||b.checkout}"
+                 style="font-size:15px;padding:10px">
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:10px">
           Extended days appear <strong>${extNum%2!==0?'yellow':'green'}</strong> on dashboard and calendar.
@@ -780,7 +795,7 @@ function renderRoomGuest() {
     const isCheckin =fmtDate(currentDate)===b.checkin;
     const isCheckout=fmtDate(currentDate)===b.checkout;
     const moveHistory=(b.roomMoves||[]).map(m=>`<div style="font-size:11px;color:var(--text2);padding:2px 0">↔ ${m.from} → ${m.to} · ${shortDate(m.date)}${m.note?' · '+m.note:''}</div>`).join('');
-    const nights    =Math.round((parseDate(b.checkout)-parseDate(b.checkin))/864e5)+1;
+    const nights    =Math.max(1,Math.round((parseDate(b.checkout)-parseDate(b.checkin))/864e5));
     const exts      =b.extensions||[];
     if(idx>0) html+=`<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">`;
     html+=`<div class="guest-panel">
@@ -843,7 +858,11 @@ function renderRoomGuest() {
           ✅ Mark arrived / checked in
         </button>`;
           if(b.checkinTime) return `
-        <div style="font-size:11px;color:var(--text3);padding:4px 0">✅ Arrived: ${fmtTimestamp(b.checkinTime)}</div>`;
+        <div style="font-size:11px;color:var(--text3);padding:4px 0;display:flex;align-items:center;gap:8px">
+          ✅ Arrived: ${fmtTimestamp(b.checkinTime)}
+          <button class="guest-action-btn action-undo" style="font-size:10px;padding:2px 7px;margin:0"
+            onclick="clearCheckinTime('${b.id}')">✕ Clear</button>
+        </div>`;
           return '';
         })()}
         <button class="guest-action-btn action-yellow" onclick="openExtendStay('${b.id}')">
@@ -1116,15 +1135,15 @@ function buildBookingForm(b, preRoom) {
     <div class="form-group">
       <label class="form-label">Check-in</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="form-input" id="bf-checkin" type="date" value="${checkinVal}" style="flex:1">
-        <input class="form-input" id="bf-checkinTime" type="time" value="${checkinTimeVal}" style="width:110px" title="Check-in time">
+        <input class="form-input" id="bf-checkin" type="date" value="${checkinVal}" style="flex:1" onchange="rebuildRoomOpts()">
+        <input class="form-input" id="bf-checkinTime" type="time" value="${checkinTimeVal}" style="width:110px" title="Check-in time" onchange="rebuildRoomOpts()">
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Check-out</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="form-input" id="bf-checkout" type="date" value="${checkoutVal}" style="flex:1">
-        <input class="form-input" id="bf-checkoutTime" type="time" value="${checkoutTimeVal}" style="width:110px" title="Check-out time">
+        <input class="form-input" id="bf-checkout" type="date" value="${checkoutVal}" style="flex:1" onchange="rebuildRoomOpts()">
+        <input class="form-input" id="bf-checkoutTime" type="time" value="${checkoutTimeVal}" style="width:110px" title="Check-out time" onchange="rebuildRoomOpts()">
       </div>
     </div>
     <div class="form-group">
@@ -1233,7 +1252,7 @@ function updateDiscountPreview() {
   if (!roomDef) { preview.style.display = 'none'; return; }
 
   const ci = parseDate(checkin), co = parseDate(checkout);
-  const nights = Math.round((co - ci) / 864e5) + 1;
+  const nights = Math.max(1, Math.round((co - ci) / 864e5));
   const baseRate  = (DB.prices[roomDef.type]||{})[source] || 0;
   const addonRate = extraHead*(DB.addons.extraHead||0) + extraBed*(DB.addons.extraBed||0);
   const gross = (baseRate + addonRate) * nights;
@@ -1251,9 +1270,26 @@ function updateDiscountPreview() {
 }
 
 function rebuildRoomOpts() {
-  const h=document.getElementById('bf-hotel').value;
-  document.getElementById('bf-room').innerHTML=sortRoomKeys(Object.keys(DB.hotels[h].rooms))
-    .map(r=>`<option value="${r}">${r} – ${DB.hotels[h].rooms[r].label}</option>`).join('');
+  const h       = document.getElementById('bf-hotel').value;
+  const checkin = document.getElementById('bf-checkin')?.value;
+  const checkout= document.getElementById('bf-checkout')?.value;
+  const ciTime  = document.getElementById('bf-checkinTime')?.value  || '14:00';
+  const coTime  = document.getElementById('bf-checkoutTime')?.value || '12:00';
+  document.getElementById('bf-room').innerHTML = sortRoomKeys(Object.keys(DB.hotels[h].rooms))
+    .map(r => {
+      let conflict = null;
+      if (checkin && checkout) {
+        conflict = DB.bookings.find(bk =>
+          bk.hotel === h && bk.room === r && bk.id !== editingBookingId &&
+          bookingsOverlap(bk.checkin, bk.checkout, checkin, checkout,
+                          bk.checkoutTimeStr||'12:00', ciTime)
+        );
+      }
+      const label = conflict
+        ? `${r} – ${DB.hotels[h].rooms[r].label} ⚠️ Taken (${shortDate(conflict.checkin)}–${shortDate(conflict.checkout)})`
+        : `${r} – ${DB.hotels[h].rooms[r].label}`;
+      return `<option value="${r}" ${conflict?'style="color:#dc2626"':''}>${label}</option>`;
+    }).join('');
 }
 
 function saveBooking() {
@@ -1316,9 +1352,16 @@ function saveBooking() {
 
 function deleteBooking(id) {
   if(!confirm('Delete this booking?')) return;
-  DB.bookings=DB.bookings.filter(b=>b.id!==id);
+  // Clean up roomMoves references on any linked bookings
+  DB.bookings.forEach(b => {
+    if (!b.roomMoves) return;
+    b.roomMoves = b.roomMoves.filter(m => m.movedFrom !== id && m.movedTo !== id);
+  });
+  DB.bookings = DB.bookings.filter(b => b.id !== id);
   delete DB.keyDeposits[id];
-  activeRoom=null; saveState(); closeModal('bookingModal'); closeModal('roomModal'); closeModal('extendModal'); renderAll(); toast('Booking deleted');
+  activeRoom=null; saveState();
+  closeModal('bookingModal'); closeModal('roomModal'); closeModal('extendModal');
+  renderAll(); toast('Booking deleted');
 }
 function closeBookingModal(e) { if(e.target===document.getElementById('bookingModal')) closeModal('bookingModal'); }
 
@@ -1349,9 +1392,13 @@ function setRoomStatusDirect(room,status) {
   saveState(); renderRoomsPage(); renderDashboard(); toast('Status updated');
 }
 function removeRoom(room) {
-  if(!confirm(`Remove room ${room}?`)) return;
+  const orphans = DB.bookings.filter(b => b.hotel===currentHotel && b.room===room);
+  const msg = orphans.length
+    ? `Remove room ${room}? This room has ${orphans.length} booking(s) on record — they will remain in the system but the room will no longer appear on the dashboard.`
+    : `Remove room ${room}?`;
+  if(!confirm(msg)) return;
   delete DB.hotels[currentHotel].rooms[room];
-  saveState(); renderRoomsPage(); renderDashboard(); toast('Room removed');
+  saveState(); renderRoomsPage(); renderDashboard(); toast(`Room ${room} removed`);
 }
 function openAddRoom() {
   document.getElementById('addRoomForm').innerHTML=`
@@ -1379,17 +1426,39 @@ function saveRoom() {
 }
 
 // ─── BOOKINGS PAGE ────────────────────────────────────────────────────────────
+let bookingsSearchQ='';
+function setBookingsSearch(v){ bookingsSearchQ=v; renderBookingsPage(); }
+
 function renderBookingsPage() {
-  const all=[...DB.bookings].filter(b=>b.hotel===currentHotel).sort((a,c)=>c.checkin.localeCompare(a.checkin));
-  document.getElementById('bookingsCount').textContent=`${all.length} bookings`;
+  const q=bookingsSearchQ.toLowerCase();
+  const all=[...DB.bookings]
+    .filter(b=>b.hotel===currentHotel)
+    .filter(b=>!q||b.guest.toLowerCase().includes(q)||b.room.toLowerCase().includes(q)||srcLabel(b.source).toLowerCase().includes(q))
+    .sort((a,c)=>c.checkin.localeCompare(a.checkin));
+  document.getElementById('bookingsCount').textContent=`${all.length} booking${all.length!==1?'s':''}`;
+
+  // Inject search bar if not present
+  const listEl=document.getElementById('bookingsList');
+  let searchBar=document.getElementById('bookingsSearch');
+  if(!searchBar){
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:sticky;top:0;z-index:10;background:var(--bg);padding:8px 0 10px';
+    wrap.innerHTML=`<div class="search-wrap" style="max-width:340px">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="bookingsSearch" type="text" placeholder="Search guest, room, source…"
+             oninput="setBookingsSearch(this.value)" value="${bookingsSearchQ}">
+    </div>`;
+    listEl.parentNode.insertBefore(wrap,listEl);
+  }
+
   if(!all.length){
-    document.getElementById('bookingsList').innerHTML=`<div class="empty"><div class="empty-icon">📅</div>No bookings.</div>`;
+    listEl.innerHTML=`<div class="empty"><div class="empty-icon">📅</div>${q?'No bookings match your search.':'No bookings.'}</div>`;
     return;
   }
   let html='';
   all.forEach(b=>{
     const ci=parseDate(b.checkin),co=parseDate(b.checkout);
-    const nights=Math.round((co-ci)/864e5)+1;
+    const nights=Math.max(1,Math.round((co-ci)/864e5));
     const paid=hasKeyDeposit(b.id);
     const roomDef=DB.hotels[b.hotel]?.rooms[b.room];
     const baseRate=roomDef?(DB.prices[roomDef.type]||{})[b.source]||0:0;
@@ -1569,7 +1638,7 @@ function renderAnalytics() {
   DB.bookings.filter(b=>b.hotel===h).forEach(b=>{
     const ci=parseDate(b.checkin),co=parseDate(b.checkout);
     const s=ci<rangeFrom?rangeFrom:ci, e=co>rangeTo?rangeTo:co;
-    if(s<=e) totalNights+=Math.round((e-s)/864e5)+1;
+    if(s<=e) totalNights+=Math.round((e-s)/864e5);
   });
 
   document.getElementById('analyticsSummary').innerHTML=`
@@ -1647,8 +1716,24 @@ function saveNewPassword() {
   if (newPw.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; errEl.style.display = 'block'; return; }
   if (newPw !== confirm) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
   ACCOUNTS[account].password = newPw;
+  // Persist passwords so they survive page reload
+  try {
+    const saved = JSON.parse(localStorage.getItem('hotel_pms_passwords')||'{}');
+    saved[account] = newPw;
+    localStorage.setItem('hotel_pms_passwords', JSON.stringify(saved));
+  } catch(e) {}
   closeModal('changePwModal');
   toast('Password updated for ' + account);
+}
+
+// Load persisted passwords on boot (called before bootAuth)
+function loadPersistedPasswords() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('hotel_pms_passwords')||'{}');
+    for (const [acct, pw] of Object.entries(saved)) {
+      if (ACCOUNTS[acct]) ACCOUNTS[acct].password = pw;
+    }
+  } catch(e) {}
 }
 
 // ─── MONTH VIEW ───────────────────────────────────────────────────────────────
@@ -1792,7 +1877,7 @@ function renderMonthView() {
           ${isCheckout ? `<div class="mv-edge-marker mv-checkout-marker"></div>` : ''}
           <div class="mv-guest-name">${shortName}</div>
           ${d === 1 || isCheckin ? `<div class="mv-src-tag">${srcCode}</div>` : ''}
-          ${hasMulti ? '<div class="mv-multi-dot">+${multiBookings.length}</div>' : ''}
+          ${hasMulti ? `<div class="mv-multi-dot">+${multiBookings.length}</div>` : ''}
           ${movedBadge}
         </div>
       </td>`;
@@ -1812,3 +1897,4 @@ function renderMonthView() {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 // renderAll() is called by bootAuth() after login — not called here directly.
+// loadPersistedPasswords() must run before bootAuth() — called from index.html boot sequence.

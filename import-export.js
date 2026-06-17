@@ -115,7 +115,7 @@ function getCellPaymentType(booking) {
   if (!roomDef) return 'occupied';
   const br = (DB.prices[roomDef.type]||{})[booking.source]||0;
   const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
-  const n  = Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
+  const n  = Math.max(1, Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5));
   const due = applyDiscount((br+ar)*n, booking);
   if (paid <= 0)   return 'occupied';
   if (paid >= due) return 'full';
@@ -203,7 +203,7 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
 
       // All bookings on this day
       const dayBookings = DB.bookings.filter(b=>
-        b.hotel===hotelKey&&b.room===roomNum&&isInRange(date,b.checkin,b.checkout)
+        b.hotel===hotelKey&&b.room===roomNum&&isInRangeInclusive(date,b.checkin,b.checkout)
       );
 
       if (!dayBookings.length) {
@@ -260,7 +260,7 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
           const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
           const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
           // Apply discount: for a per-day estimate, divide full booking discount proportionally
-          const fullNights=Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5)+1;
+          const fullNights=Math.max(1,Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5));
           const fullGross=(br+ar)*fullNights;
           const fullNet=applyDiscount(fullGross,booking);
           const ratePerNight=fullNights>0?fullNet/fullNights:0;
@@ -313,7 +313,7 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
   for(let d=1;d<=days;d++){
     const date=new Date(year,month,d);
     const cnt=sortedRooms.filter(r=>
-      DB.bookings.some(b=>b.hotel===hotelKey&&b.room===r&&isInRange(date,b.checkin,b.checkout))
+      DB.bookings.some(b=>b.hotel===hotelKey&&b.room===r&&isInRangeInclusive(date,b.checkin,b.checkout))
     ).length;
     const fc=footerRow.getCell(d+2);
     fc.value=cnt>0?`${cnt} occ`:'';
@@ -352,13 +352,13 @@ function buildSummarySheet(wb, months) {
       let occ=0;
       rms.forEach(r=>{ for(let d=1;d<=days2;d++){
         const dt=new Date(year,month,d);
-        if(DB.bookings.some(b=>b.hotel===key&&b.room===r&&isInRange(dt,b.checkin,b.checkout))) occ++;
+        if(DB.bookings.some(b=>b.hotel===key&&b.room===r&&isInRangeInclusive(dt,b.checkin,b.checkout))) occ++;
       }});
       const income=DB.bookings.filter(b=>b.hotel===key).reduce((s,b)=>{
         const ci=parseDate(b.checkin),co=parseDate(b.checkout);
         const st=ci<mS?mS:ci, en=co>mE?mE:co;
         if(st>en) return s;
-        const n=Math.round((en-st)/864e5)+1;
+        const n=Math.max(1,Math.round((en-st)/864e5));
         const rd=DB.hotels[key]?.rooms[b.room];
         if(!rd) return s;
         const br=(DB.prices[rd.type]||{})[b.source]||0;
@@ -478,7 +478,7 @@ async function importFromExcel(file) {
         const existing=DB.bookings.find(b=>
           b.hotel===hotelKey&&b.room===roomNum&&
           b.guest.toUpperCase()===guest.toUpperCase()&&
-          isInRange(cellDate,b.checkin,b.checkout)
+          isInRangeInclusive(cellDate,b.checkin,b.checkout)
         );
         if(existing){ skipped++; continue; }
 
