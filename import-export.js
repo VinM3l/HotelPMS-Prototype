@@ -109,15 +109,16 @@ const SRCLABEL = { T:'Trip.com', W:'Walk-in', B:'Booking.com', AG:'Agoda', EX:'E
 
 // ─── CELL TYPE ────────────────────────────────────────────────────────────────
 function getCellPaymentType(booking) {
-  if (!booking) return 'vacant';
+  // Returns: 'unpaid' | 'partial' | 'full'
+  if (!booking) return 'unpaid';
   const paid = (booking.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  if (paid <= 0) return 'unpaid';
   const roomDef = DB.hotels[booking.hotel]?.rooms[booking.room];
-  if (!roomDef) return 'occupied';
+  if (!roomDef) return 'partial';
   const br = (DB.prices[roomDef.type]||{})[booking.source]||0;
   const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
   const n  = Math.max(1, Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5));
   const due = applyDiscount((br+ar)*n, booking);
-  if (paid <= 0)   return 'occupied';
   if (paid >= due) return 'full';
   return 'partial';
 }
@@ -201,70 +202,88 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
         cell.value='MAINT'; applyCell(cell,'maint',isAlt); continue;
       }
 
-      // All bookings on this day
-      const dayBookings = DB.bookings.filter(b=>
-        b.hotel===hotelKey&&b.room===roomNum&&isInRangeInclusive(date,b.checkin,b.checkout)
+      // Determine what's happening in this cell.
+      // Rule: a booking "occupies" a room from checkin up to but NOT including checkout.
+      //       Checkout day = special display (show departing guest) but don't double-count.
+      const ds = fmtDate(date);
+      const isCheckoutDay = b => b.checkout === ds;
+      const isCheckinDay  = b => b.checkin  === ds;
+
+      // Active = genuinely in the room tonight (exclusive of checkout)
+      const activeBookings = DB.bookings.filter(b=>
+        b.hotel===hotelKey && b.room===roomNum &&
+        isInRange(date, b.checkin, b.checkout)   // exclusive: checkin <= date < checkout
       );
 
-      if (!dayBookings.length) {
+      // Departing today but NOT also arriving (avoid double-counting turnovers)
+      const departingOnly = DB.bookings.filter(b=>
+        b.hotel===hotelKey && b.room===roomNum &&
+        isCheckoutDay(b) && !activeBookings.find(a=>a.id===b.id)
+      );
+
+      // What to show: active guests first, then departing if no one is active
+      const displayBookings = activeBookings.length ? activeBookings : departingOnly;
+
+      if (!displayBookings.length) {
         cell.value=''; applyCell(cell,'vacant',isAlt); continue;
       }
 
-      const isMulti = dayBookings.length>1;
+      const isMulti = displayBookings.length > 1;
       let cellType  = 'occupied';
       let lines     = [];
 
-      dayBookings.forEach((booking,bi)=>{
+      displayBookings.forEach((booking, bi) => {
         const src  = SRC[booking.source]||booking.source;
         let txt    = `${src} - ${roomNum} ${booking.guest.toUpperCase()}`;
-        if(booking.extraHead>0) txt+=` +${booking.extraHead}H`;
-        if(booking.extraBed>0)  txt+=` +${booking.extraBed}B`;
+        if (booking.extraHead>0) txt += ` +${booking.extraHead}H`;
+        if (booking.extraBed>0)  txt += ` +${booking.extraBed}B`;
+        if (isCheckoutDay(booking) && !isCheckinDay(booking)) txt += ' [OUT]';
 
-        // Checkout / invalid-checkout flags (manual, primary booking only)
-        if(bi===0){
-          if(booking.invalidCheckout) cellType='invalid-checkout';
-          else if(booking.checkedOut) cellType='checkout';
+        // Checkout / invalid-checkout status (primary booking only)
+        if (bi===0) {
+          if (booking.invalidCheckout)      cellType = 'invalid-checkout';
+          else if (booking.checkedOut)      cellType = 'checkout';
+          else if (isCheckoutDay(booking))  cellType = 'checkout'; // scheduled checkout
         }
 
-        // Extension detection (overrides occupied, not checkout/invalid)
-        const exts=booking.extensions||[];
-        if(exts.length>0&&cellType==='occupied'){
-          const origCo=parseDate(exts[0].originalCheckout||booking.checkout);
-          const d0=new Date(date.getFullYear(),date.getMonth(),date.getDate());
-          if(d0>origCo){
-            for(let ei=0;ei<exts.length;ei++){
-              const prevEnd=ei===0?origCo:parseDate(exts[ei-1].checkout);
-              const thisEnd=parseDate(exts[ei].checkout);
-              if(d0>prevEnd&&d0<=thisEnd){
-                txt+=ei%2===0?' [EXT]':' [EXT2]';
-                if(bi===0) cellType=ei%2===0?'ext':'ext2';
+        // Extension detection (overrides 'occupied', not checkout/invalid)
+        const exts = booking.extensions||[];
+        if (exts.length > 0 && cellType === 'occupied') {
+          const origCo = parseDate(exts[0].originalCheckout || booking.checkin); // fallback safe
+          const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          if (d0 >= origCo) {
+            for (let ei=0; ei<exts.length; ei++) {
+              const prevEnd = ei===0 ? origCo : parseDate(exts[ei-1].checkout);
+              const thisEnd = parseDate(exts[ei].checkout);
+              if (d0 >= prevEnd && d0 < thisEnd) {
+                txt += ei%2===0 ? ' [EXT]' : ' [EXT2]';
+                if (bi===0) cellType = ei%2===0 ? 'ext' : 'ext2';
                 break;
               }
             }
           }
         }
 
-        // Payment colour — only on occupied/multi, not checkout/invalid/ext
-        if(bi===0&&cellType==='occupied'){
-          const ds=fmtDate(date);
-          const paidToday=(booking.payments||[]).some(p=>p.date===ds);
-          const pmtType=getCellPaymentType(booking);
-          if(paidToday)                cellType=isMulti?'multi-full':'occ-full';
-          else if(pmtType==='partial') cellType=isMulti?'multi-part':'occ-partial';
-          else if(isMulti)             cellType='multi';
+        // Payment colour — only when actually occupied (not checkout/invalid/ext)
+        if (bi===0 && cellType==='occupied') {
+          const pmtType = getCellPaymentType(booking);
+          if      (pmtType==='full')    cellType = isMulti ? 'multi-full'  : 'occ-full';
+          else if (pmtType==='partial') cellType = isMulti ? 'multi-part'  : 'occ-partial';
+          else if (isMulti)             cellType = 'multi';
         }
 
         lines.push(txt);
-        if(bi===0){
+
+        // Only count nights + income on active (non-checkout-day) cells to avoid double-counting
+        if (bi===0 && !isCheckoutDay(booking)) {
           totalNights++;
-          const br=(DB.prices[roomDef.type]||{})[booking.source]||0;
-          const ar=(booking.extraHead||0)*(DB.addons.extraHead||0)+(booking.extraBed||0)*(DB.addons.extraBed||0)+(booking.breakfast||0)*(DB.addons.breakfast||0);
-          // Apply discount: for a per-day estimate, divide full booking discount proportionally
-          const fullNights=Math.max(1,Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5));
-          const fullGross=(br+ar)*fullNights;
-          const fullNet=applyDiscount(fullGross,booking);
-          const ratePerNight=fullNights>0?fullNet/fullNights:0;
-          totalIncome+=ratePerNight;
+          const br = (DB.prices[roomDef.type]||{})[booking.source]||0;
+          const ar = (booking.extraHead||0)*(DB.addons.extraHead||0)
+                   + (booking.extraBed||0)*(DB.addons.extraBed||0)
+                   + (booking.breakfast||0)*(DB.addons.breakfast||0);
+          const fullNights = Math.max(1, Math.round((parseDate(booking.checkout)-parseDate(booking.checkin))/864e5));
+          const fullNet    = applyDiscount((br+ar)*fullNights, booking);
+          totalIncome     += fullNights > 0 ? fullNet/fullNights : 0;
         }
       });
 
@@ -312,8 +331,9 @@ function buildSheet(wb, hotelKey, hotel, rooms, year, month) {
   footerRow.getCell(2).fill=hexFill(C.totalsBg);
   for(let d=1;d<=days;d++){
     const date=new Date(year,month,d);
+    // Count rooms that are genuinely occupied (exclusive of checkout day)
     const cnt=sortedRooms.filter(r=>
-      DB.bookings.some(b=>b.hotel===hotelKey&&b.room===r&&isInRangeInclusive(date,b.checkin,b.checkout))
+      DB.bookings.some(b=>b.hotel===hotelKey&&b.room===r&&isInRange(date,b.checkin,b.checkout))
     ).length;
     const fc=footerRow.getCell(d+2);
     fc.value=cnt>0?`${cnt} occ`:'';
@@ -352,7 +372,8 @@ function buildSummarySheet(wb, months) {
       let occ=0;
       rms.forEach(r=>{ for(let d=1;d<=days2;d++){
         const dt=new Date(year,month,d);
-        if(DB.bookings.some(b=>b.hotel===key&&b.room===r&&isInRangeInclusive(dt,b.checkin,b.checkout))) occ++;
+        // Exclusive of checkout day to avoid double-counting turnovers
+        if(DB.bookings.some(b=>b.hotel===key&&b.room===r&&isInRange(dt,b.checkin,b.checkout))) occ++;
       }});
       const income=DB.bookings.filter(b=>b.hotel===key).reduce((s,b)=>{
         const ci=parseDate(b.checkin),co=parseDate(b.checkout);
@@ -465,6 +486,7 @@ async function importFromExcel(file) {
         // Take first line (in case of multi-guest cell)
         const cellVal=rawVal.split('\n')[0]
           .replace(/\s*\[EXT2?\]\s*/gi,'')
+          .replace(/\s*\[OUT\]\s*/gi,'')
           .replace(/\s*\[PAID\]\s*/gi,'')
           .replace(/\s*\[PART\]\s*/gi,'')
           .replace(/\s*\[2G\]\s*/gi,'')
@@ -486,13 +508,13 @@ async function importFromExcel(file) {
         for(let d2=day-1;d2>=1;d2--){
           const c2=Object.entries(dateColMap).find(([,v])=>v===d2)?.[0];
           if(!c2) break;
-          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[OUT\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
           if(v2&&parseCellValue(v2).guest?.toUpperCase()===guest.toUpperCase()) runStart=d2; else break;
         }
         for(let d2=day+1;d2<=days2;d2++){
           const c2=Object.entries(dateColMap).find(([,v])=>v===d2)?.[0];
           if(!c2) break;
-          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+          const v2=String(row[parseInt(c2)]||'').split('\n')[0].replace(/\s*\[EXT2?\]|\[OUT\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
           if(v2&&parseCellValue(v2).guest?.toUpperCase()===guest.toUpperCase()) runEnd=d2; else break;
         }
         if(runStart!==day){ skipped++; continue; }
@@ -528,7 +550,7 @@ async function importFromExcel(file) {
 // ─── CELL PARSER ─────────────────────────────────────────────────────────────
 function parseCellValue(raw) {
   let source='W',guest='',extraHead=0,extraBed=0;
-  let str=raw.replace(/\s*\[EXT2?\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
+  let str=raw.replace(/\s*\[EXT2?\]|\[OUT\]|\[PAID\]|\[PART\]|\[2G\]/gi,'').trim();
   const hm=str.match(/\+(\d+)H/i); const bm=str.match(/\+(\d+)B/i);
   if(hm){ extraHead=parseInt(hm[1]); str=str.replace(hm[0],'').trim(); }
   if(bm){ extraBed =parseInt(bm[1]); str=str.replace(bm[0],'').trim(); }
